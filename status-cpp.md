@@ -33,6 +33,15 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`= default` non inizializza i tipi primitivi**: il costruttore generato delega ai singoli membri; i tipi con costruttore proprio (`std::string`, `std::vector`) si inizializzano, i primitivi (`bool`, `int`, `HKEY`) restano a valore indeterminato
 - **Overload resolution**: lo stesso nome di funzione può avere comportamenti radicalmente diversi a seconda dei tipi passati — `std::string::replace` vs `std::replace` (da `<algorithm>`), `find(char)` vs `find(const char*)`, `find_first_of(const char*, pos, count)` dove `count` è la lunghezza del set di caratteri da cercare, non il range di ricerca
 - **`RegGetValue` vs `RegQueryValueEx`**: `RegGetValue` garantisce null-termination per `REG_SZ` e permette filtraggio per tipo via flag `RRF_RT_*`
+- **`sizeof(std::string)` vs `std::string::size()`**: `sizeof` restituisce la dimensione dell'oggetto classe (32 su x64: puntatore, size, capacity, SSO buffer), non la lunghezza del contenuto. `size()` restituisce la lunghezza del contenuto
+- **Double-call pattern per API registro**: prima chiamata con buffer NULL per ottenere la dimensione necessaria, `resize()` della stringa, seconda chiamata per leggere. Dopo la lettura `resize(dwBufferSize - 1)` per rimuovere il null terminator incluso nel conteggio
+- **`std::string` e null terminator**: `std::string` non usa `\0` per determinare la lunghezza — tiene traccia separatamente. Un `\0` scritto dentro la stringa è un carattere come un altro; `size()` non lo riconosce come terminatore
+- **`RegGetValue` parametri**: `lpSubKey` è una sotto-chiave relativa a `hKey` (comodità per evitare `RegOpenKeyEx` separata); `lpValueName` è il nome del valore. Nel VDD i valori sono piatti sotto la chiave principale → `lpSubKey = ""`, `lpValueName` = nome completo
+- **Character set del progetto**: "Not Set" / "Multi-Byte" / "Unicode" determina se le macro TCHAR (`RegGetValue`, `CharUpperBuff` ecc.) risolvono a versione A (narrow) o W (wide). Coerenza obbligatoria tra apertura della chiave e chiamate successive
+- **Igiene sugli errori**: se una funzione può fallire (tipo ritorno lo dice), controllare il risultato — anche se una chiamata precedente alla stessa funzione è riuscita. Condizioni esterne possono cambiare tra le due chiamate
+- **`GetText()` di TinyXML2**: restituisce `nullptr` se l'elemento non ha testo. Assegnare `nullptr` a `std::string` è UB/crash. Check obbligatorio prima dell'assegnazione
+- **`RootElement()` di TinyXML2**: può restituire `nullptr` anche se `LoadFile` ha avuto successo (file con solo dichiarazione XML, nessun elemento radice)
+- **`strtok` vs `find`/`substr`**: `strtok` è C puro, modifica la stringa sorgente (riempie di `\0`), usa stato statico (non thread-safe). Tokenizzazione con `find`/`substr` è C++ idiomatico
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -53,7 +62,6 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Guida alla creazione dei certificati di test — richiesta esplicita di Valentina, rimandata
 - **Separazione architetturale driver/settings**: il driver dovrebbe ricevere la configurazione, non leggerla. Nel VDD originale le due responsabilità sono mescolate
 - **Teoria su puntatori, reference, const, double pointer**: Valentina li usa ma la comprensione teorica è frammentaria. Da affrontare con teoria + esercizio mirato. Legato al filo conduttore ownership/lifetime
-- **`InitializePath` nel `RegistryReader`**: usa `RegQueryValueExW` (wide) su un `std::string` (narrow) — type mismatch. `sizeof(path)` dà la dimensione dell'oggetto string, non del contenuto. Da correggere
 
 ## Argomenti toccati — indice compatto
 
@@ -64,23 +72,29 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `using` (type alias)
 - Overload resolution e le sue trappole
 - Costruttori `= default` e inizializzazione dei membri
+- `sizeof` su classi vs `size()` su contenuti
+- `std::string` e gestione interna del null terminator
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
 - Name mangling, `dllexport`/`dllimport`, `.lib` di import
 - Toolset diversi tra progetti nella stessa solution
 - Clean + rebuild per risolvere simboli stale / PDB disallineati
+- Character set del progetto (Not Set / Multi-Byte / Unicode) e impatto sulle API TCHAR
 
 ### Windows API
-- Registry: `RegOpenKeyExW`, `RegQueryValueExW`, `RegGetValue`, `RegCloseKey`
+- Registry: `RegOpenKeyEx`, `RegQueryValueExW`, `RegGetValue`, `RegCloseKey`
 - Tipi registro: `REG_DWORD`, `REG_SZ`
 - Handle: tipi opachi, `HKEY`
+- Double-call pattern per lettura valori registro (size query → allocate → read)
+- `RegGetValue`: parametri `lpSubKey` vs `lpValueName`, flag `RRF_RT_*`
 
 ### Design e architettura
 - Separazione responsabilità: reader/loader/utility
 - Source of truth per i settings (XML primario, registro override)
 - Mapping path→campo con variant di puntatori
 - Struttura dati allineata al DOM XML
+- Gestione risorse: open/close nella stessa funzione vs split tra funzioni diverse (trade-off)
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -89,7 +103,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - UMDF come DLL in `WUDFHost.exe`
 
 ### Librerie esterne
-- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`
+- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari
 - Visitor pattern (discusso, scartato per il caso d'uso)
 
 ## Materiale attivo
@@ -98,13 +112,14 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Fork di studio**: `ghostintheshell-192/Virtual-Display-Driver-Ref` — fork di `itsmikethetech/Virtual-Display-Driver`. Detach dal parent richiesto a GitHub support (le PR defaultano sull'upstream). Pubblico.
 - **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 120-col.
 - **Branch `refactor/globals` (mergiato)**: ~50 globali migrate in `DriverSettings` con sotto-struct in `globals.h`. Istanza globale `g_settings`.
-- **Branch `refactor/settings-reading` (in corso)**: progetto console `MttVddSettings` per la lettura impostazioni. Architettura completata:
+- **Branch `refactor/settings-reading` (mergiato — PR #3)**: progetto console `MttVddSettings` per la lettura impostazioni. Architettura completata e chiusa:
   - `SettingsLoader`: orchestratore. Possiede `DriverSettings`, il vettore `entries` (coppie chiave-puntatore), e i due reader. `Init()` apre le sorgenti e popola le entries. `LoadSettings()` fa un unico loop: XML prima, registro dopo (l'ultimo che scrive vince)
-  - `RegistryReader`: apre/chiude `HKEY`, `GetSetting` riceve chiave stringa + `SettingValuePtr` (variant di puntatori), `GetRawRegistryValue` usa `RegGetValue`
-  - `XmlReader`: carica il file con TinyXML2, `GetSetting` tokenizza la chiave su `.` e naviga il DOM segmento per segmento
+  - `RegistryReader`: apre/chiude `HKEY`, `GetSetting` riceve chiave stringa + `SettingValuePtr` (variant di puntatori), `GetRawRegistryValue` usa `RegGetValue` con flag `RRF_RT_*`, `InitializePath` usa il double-call pattern
+  - `XmlReader`: carica il file con TinyXML2, `GetSetting` tokenizza la chiave su `.` e naviga il DOM segmento per segmento, null checks su `RootElement` e `GetText`
   - `utilities.h`: `convert_setting<T>` (specializzazioni bool/int/double/string), `tokenize`, type alias `SettingValuePtr`
-  - `globals.h`: `DriverSettings` con sotto-struct allineate alla struttura XML/globali originali (9 sotto-struct: Log, Cursor, Edid, EdidIntegration, Colour, HdrAdvanced con ColorPrimaries e ColorSpace, AutoResolution con EdidModeFiltering e PreferredMode, ColorAdvanced con BitDepthManagement e ColorFormatExtended, MonitorEmulation)
-  - **Da fare**: correggere `InitializePath` (type mismatch wide/narrow), pulire codice commentato residuo
+  - `globals.h`: `DriverSettings` con sotto-struct allineate alla struttura XML/globali originali
+  - Confronto con originale completato: le impostazioni Monitor Emulation, XorCursorSupportLevel, WideColorGamut, HdrToneMapping non sono nella tabella entries (decisione intenzionale: non usate dal driver)
+- **Prossimo refactoring: estrazione modulo di logging** — nel codice originale il logging è centrato su `vddlog()` (scrive su file + opzionale pipe). Problemi individuati: `CreateDirectoryW` chiamata a ogni messaggio (va fatta una volta sola all'init), `LogQueries` è un wrapper di conversione wstring→string. Target: estrarre `vddlog`, `SendToPipe`, `LogQueries` in un modulo separato con inizializzazione pulita
 
 ### Ciclo di vita IddCx — lettura guidata
 - Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
@@ -119,8 +134,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ## Menù possibile
 *(possibilità, non impegni — nessun ordine, nessuna priorità)*
 
-- VDD refactoring: pulire il codice commentato residuo nel settings-reading branch
-- VDD refactoring: correggere `InitializePath` (type mismatch wide/narrow)
+- **VDD refactoring: estrazione modulo di logging** — prossimo target concordato
 - VDD refactoring: pensare alla scrittura dei settings (registro) — `SetSetting`
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
 - VDD: `DriverEntry` in dettaglio
