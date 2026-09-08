@@ -42,6 +42,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`GetText()` di TinyXML2**: restituisce `nullptr` se l'elemento non ha testo. Assegnare `nullptr` a `std::string` è UB/crash. Check obbligatorio prima dell'assegnazione
 - **`RootElement()` di TinyXML2**: può restituire `nullptr` anche se `LoadFile` ha avuto successo (file con solo dichiarazione XML, nessun elemento radice)
 - **`strtok` vs `find`/`substr`**: `strtok` è C puro, modifica la stringa sorgente (riempie di `\0`), usa stato statico (non thread-safe). Tokenizzazione con `find`/`substr` è C++ idiomatico
+- **Dangling pointer/handle**: avevi un riferimento valido a una risorsa, qualcun altro l'ha liberata, il tuo riferimento punta nel vuoto. Distinto da memory leak (perdi il riferimento, la risorsa resta) e da memoria non inizializzata (nessun valore scritto)
+- **Named pipe**: meccanismo IPC di Windows — un "tubo" con un nome nel sistema (es. `\\.\pipe\VDDPipe`) tra due processi; uno scrive con `WriteFile`, l'altro legge dall'altro capo. Nel VDD: canale bidirezionale tra driver e companion app
+- **`explicit` sui costruttori**: impedisce al compilatore di usare quel costruttore per conversioni implicite. `today = local_days_value` non compila; serve `today = year_month_day{local_days_value}`. Chi progetta la classe decide se una conversione è abbastanza "ovvia" da essere implicita
+- **Dichiarazione vs assegnazione**: `Type var{value}` è inizializzazione alla dichiarazione; `var = Type{value}` è assegnazione a variabile esistente (costruisce un temporaneo e lo assegna). Sintassi diversa per momenti diversi nella vita della variabile
+- **`std::chrono` C++20**: `std::format("{:%Y-%m-%d %X}", zt)` formatta direttamente tipi chrono. `zoned_time{tz, time_point}` converte da UTC a ora locale. `current_zone()` restituisce puntatore a oggetto statico della timezone database (non posseduto, non va liberato). `floor<days>` su `local_time` vs `system_clock::now()` (UTC) — differenza rilevante a cavallo della mezzanotte
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -72,8 +77,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `using` (type alias)
 - Overload resolution e le sue trappole
 - Costruttori `= default` e inizializzazione dei membri
+- Costruttori `explicit` e conversioni implicite
 - `sizeof` su classi vs `size()` su contenuti
 - `std::string` e gestione interna del null terminator
+- `std::chrono` C++20: `zoned_time`, `current_zone`, `std::format` con tipi chrono
+- Dangling pointer/handle
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -88,19 +96,23 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Handle: tipi opachi, `HKEY`
 - Double-call pattern per lettura valori registro (size query → allocate → read)
 - `RegGetValue`: parametri `lpSubKey` vs `lpValueName`, flag `RRF_RT_*`
+- Named pipe: IPC tra processi, `WriteFile` per scrivere su `HANDLE`
 
 ### Design e architettura
-- Separazione responsabilità: reader/loader/utility
+- Separazione responsabilità: reader/loader/utility/logger
 - Source of truth per i settings (XML primario, registro override)
 - Mapping path→campo con variant di puntatori
 - Struttura dati allineata al DOM XML
 - Gestione risorse: open/close nella stessa funzione vs split tra funzioni diverse (trade-off)
+- Uso vs possesso: il logger *usa* la pipe (`HANDLE*`) ma non la possiede — non crea, non chiude
+- File di log tenuto aperto con rotazione a cambio data (vs open/close a ogni messaggio)
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
 - Callback: registrazione e implementazione
 - `DeviceAdd`, `D0Entry`, `InitAdapter`
 - UMDF come DLL in `WUDFHost.exe`
+- Pipe driver↔companion app: `StartNamedPipeServer` → `NamedPipeServer` → `HandleClient`; ciclo di vita dell'handle gestito da `HandleClient`
 
 ### Librerie esterne
 - TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari
@@ -111,15 +123,21 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ### Virtual Display Driver — analisi e refactoring
 - **Fork di studio**: `ghostintheshell-192/Virtual-Display-Driver-Ref` — fork di `itsmikethetech/Virtual-Display-Driver`. Detach dal parent richiesto a GitHub support (le PR defaultano sull'upstream). Pubblico.
 - **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 120-col.
+- **Progetto console rinominato `MttVddRefactor`** (era `MttVddSettings`): contiene sia i moduli settings che logging, organizzati con filtri Visual Studio (`src/settings`, `src/logging`, `header/settings`, `header/logging`).
 - **Branch `refactor/globals` (mergiato)**: ~50 globali migrate in `DriverSettings` con sotto-struct in `globals.h`. Istanza globale `g_settings`.
-- **Branch `refactor/settings-reading` (mergiato — PR #3)**: progetto console `MttVddSettings` per la lettura impostazioni. Architettura completata e chiusa:
-  - `SettingsLoader`: orchestratore. Possiede `DriverSettings`, il vettore `entries` (coppie chiave-puntatore), e i due reader. `Init()` apre le sorgenti e popola le entries. `LoadSettings()` fa un unico loop: XML prima, registro dopo (l'ultimo che scrive vince)
-  - `RegistryReader`: apre/chiude `HKEY`, `GetSetting` riceve chiave stringa + `SettingValuePtr` (variant di puntatori), `GetRawRegistryValue` usa `RegGetValue` con flag `RRF_RT_*`, `InitializePath` usa il double-call pattern
-  - `XmlReader`: carica il file con TinyXML2, `GetSetting` tokenizza la chiave su `.` e naviga il DOM segmento per segmento, null checks su `RootElement` e `GetText`
-  - `utilities.h`: `convert_setting<T>` (specializzazioni bool/int/double/string), `tokenize`, type alias `SettingValuePtr`
+- **Branch `refactor/settings-reading` (mergiato — PR #3)**: architettura settings completata:
+  - `SettingsLoader`: orchestratore. Possiede `DriverSettings`, il vettore `entries` (coppie chiave-puntatore), e i due reader
+  - `RegistryReader`: `RegGetValue` con flag `RRF_RT_*`, double-call pattern
+  - `XmlReader`: TinyXML2, navigazione DOM segmento per segmento
+  - `utilities.h`: `convert_setting<T>`, `tokenize`, type alias `SettingValuePtr`
   - `globals.h`: `DriverSettings` con sotto-struct allineate alla struttura XML/globali originali
-  - Confronto con originale completato: le impostazioni Monitor Emulation, XorCursorSupportLevel, WideColorGamut, HdrToneMapping non sono nella tabella entries (decisione intenzionale: non usate dal driver)
-- **Prossimo refactoring: estrazione modulo di logging** — nel codice originale il logging è centrato su `vddlog()` (scrive su file + opzionale pipe). Problemi individuati: `CreateDirectoryW` chiamata a ogni messaggio (va fatta una volta sola all'init), `LogQueries` è un wrapper di conversione wstring→string. Target: estrarre `vddlog`, `SendToPipe`, `LogQueries` in un modulo separato con inizializzazione pulita
+- **Branch `refactor/logging` (mergiato)**: classe `Logger` estratta da `vddlog()`:
+  - `enum class LogType` al posto del char per il tipo di log
+  - File tenuto aperto con rotazione a cambio data (check `HasDateChanged()` a ogni messaggio)
+  - `HANDLE*` alla pipe globale — uso senza possesso, dereferenziato a ogni chiamata
+  - `zoned_time` + `current_zone()` per timestamp locali (C++20)
+  - `ToggleStandardLogs`/`ToggleDebugLogs`/`TogglePipedLogs` con apertura/chiusura file coerente
+  - `SendToPipe` privato, chiamato internamente da `Message`
 
 ### Ciclo di vita IddCx — lettura guidata
 - Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
@@ -134,7 +152,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ## Menù possibile
 *(possibilità, non impegni — nessun ordine, nessuna priorità)*
 
-- **VDD refactoring: estrazione modulo di logging** — prossimo target concordato
+- VDD refactoring: integrare `Logger` nel driver al posto di `vddlog` — sostituzione delle chiamate
+- VDD refactoring: estrarre `WStringToString` / `LogQueries` — decidere dove mettere le utility di conversione
 - VDD refactoring: pensare alla scrittura dei settings (registro) — `SetSetting`
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
 - VDD: `DriverEntry` in dettaglio
