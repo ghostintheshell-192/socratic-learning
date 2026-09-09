@@ -47,6 +47,9 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`explicit` sui costruttori**: impedisce al compilatore di usare quel costruttore per conversioni implicite. `today = local_days_value` non compila; serve `today = year_month_day{local_days_value}`. Chi progetta la classe decide se una conversione è abbastanza "ovvia" da essere implicita
 - **Dichiarazione vs assegnazione**: `Type var{value}` è inizializzazione alla dichiarazione; `var = Type{value}` è assegnazione a variabile esistente (costruisce un temporaneo e lo assegna). Sintassi diversa per momenti diversi nella vita della variabile
 - **`std::chrono` C++20**: `std::format("{:%Y-%m-%d %X}", zt)` formatta direttamente tipi chrono. `zoned_time{tz, time_point}` converte da UTC a ora locale. `current_zone()` restituisce puntatore a oggetto statico della timezone database (non posseduto, non va liberato). `floor<days>` su `local_time` vs `system_clock::now()` (UTC) — differenza rilevante a cavallo della mezzanotte
+- **Ordine inizializzazione membri**: i membri si inizializzano nell'ordine di dichiarazione nell'header, non nell'ordine dell'initializer list. La ragione: c'è un solo distruttore, che deve invertire un ordine unico. L'initializer list va allineato alla dichiarazione per evitare confusione
+- **Macro TCHAR e versioni A/W**: `CreateDirectory`, `RegGetValue` ecc. sono macro che si espandono a `…W` (wide) o `…A` (narrow) in base al CharacterSet del progetto. Si può chiamare direttamente la versione esplicita (`CreateDirectoryA`) per bypassare la macro
+- **Multibyte = codifica dove un carattere può occupare più di un byte**: `WideCharToMultiByte` con code page `CP_UTF8` produce UTF-8. "Multibyte" è il termine generico di Windows, non uno specifico encoding
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -60,13 +63,17 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 
 - `operator new` non ritorna `nullptr` su fallimento (lancia `std::bad_alloc`) — aggancia il difetto `C6011` su `new IndirectDeviceContext(Device)` nel driver e una misconception negli appunti di Valentina; chiudere al ritorno sul driver
 - `~IndirectDeviceContext`: `lock_guard`, `mutex`, `swap` di una mappa, `unique_ptr` — visti di sfuggita leggendo il distruttore, tutti da aprire quando il percorso li incontra
-- Lambda: vista meccanicamente (funzione senza nome scritta sul posto); cattura e closure non toccate — ora usata concretamente nel `std::visit`, buon punto di rientro
+- Lambda: teoria (cattura e closure) non consolidata — usata concretamente in `std::visit` e `GetSetting` (cattura di variabili, `this`). Richiesta esplicita di ripasso da Valentina
 - `IDD_IS_FIELD_AVAILABLE` — versioning runtime del framework; ramo `if` (HDR / callback `…2`) è quello vivo sulla VM (Win11 + WDK recente), ramo `else` è codice morto per lei
-- Doppia `RegCloseKey` in `EnabledQuery` (VDD) — difetto locale trovato, potenzialmente proponibile upstream
+- Doppia `RegCloseKey` in `EnabledQuery` (VDD) — `EnabledQuery` ora rimossa, il difetto non esiste più nel refactoring
 - fat pointer (puntatori a funzione membro > 8 byte) — solo se emerge nel codice
 - Guida alla creazione dei certificati di test — richiesta esplicita di Valentina, rimandata
-- **Separazione architetturale driver/settings**: il driver dovrebbe ricevere la configurazione, non leggerla. Nel VDD originale le due responsabilità sono mescolate
+- **Separazione architetturale driver/settings**: il driver dovrebbe ricevere la configurazione, non leggerla — in corso di realizzazione con il refactoring
 - **Teoria su puntatori, reference, const, double pointer**: Valentina li usa ma la comprensione teorica è frammentaria. Da affrontare con teoria + esercizio mirato. Legato al filo conduttore ownership/lifetime
+- **std::visit + std::variant — ripasso teoria**: meccanismo, perché funziona, alternative, limiti. Richiesta esplicita di Valentina
+- **Static vs shared linking**: mismatch LNK2038 su `tinyxml2.lib` (debug/release, CRT statica/dinamica). Valentina ha dichiarato di non aver capito la differenza. Da affrontare come teoria
+- **Visibilità tra unità di traduzione (extern, scope globale)**: confusione tra `extern`, `friend`, variabile globale. Da collegare a compilazione separata e dichiarazione vs definizione
+- **Centralizzazione lettura monitor config**: la sezione risoluzioni/refresh rates nell'XML ha struttura diversa (liste ripetute, non scalari) dal pattern attuale di SettingsLoader. Valutare estensione futura
 
 ## Argomenti toccati — indice compatto
 
@@ -82,6 +89,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `std::string` e gestione interna del null terminator
 - `std::chrono` C++20: `zoned_time`, `current_zone`, `std::format` con tipi chrono
 - Dangling pointer/handle
+- Ordine inizializzazione membri e initializer list
+- Lambda: cattura variabili e `this` (uso pratico, teoria da consolidare)
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -89,6 +98,9 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Toolset diversi tra progetti nella stessa solution
 - Clean + rebuild per risolvere simboli stale / PDB disallineati
 - Character set del progetto (Not Set / Multi-Byte / Unicode) e impatto sulle API TCHAR
+- Rinominazione progetto Visual Studio: allineare cartella, `.vcxproj`, `.vcxproj.filters`, `.sln`, `<RootNamespace>`
+- Warning WDK trattati come errori (`/WX`): disabilitare warning specifici per header di sistema (`4471`)
+- Mismatch CRT tra librerie: `_ITERATOR_DEBUG_LEVEL`, `RuntimeLibrary` — static vs shared, debug vs release
 
 ### Windows API
 - Registry: `RegOpenKeyEx`, `RegQueryValueExW`, `RegGetValue`, `RegCloseKey`
@@ -97,6 +109,9 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Double-call pattern per lettura valori registro (size query → allocate → read)
 - `RegGetValue`: parametri `lpSubKey` vs `lpValueName`, flag `RRF_RT_*`
 - Named pipe: IPC tra processi, `WriteFile` per scrivere su `HANDLE`
+- Versioni A/W delle API: `CreateDirectoryA` vs `CreateDirectoryW`, bypass della macro TCHAR
+- `WideCharToMultiByte` con `CP_UTF8`: conversione wide→narrow, termine "multibyte" in Windows
+- DXGI: `DXGI_ADAPTER_DESC::Description` è `WCHAR[128]`, non ha versione narrow
 
 ### Design e architettura
 - Separazione responsabilità: reader/loader/utility/logger
@@ -106,6 +121,9 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Gestione risorse: open/close nella stessa funzione vs split tra funzioni diverse (trade-off)
 - Uso vs possesso: il logger *usa* la pipe (`HANDLE*`) ma non la possiede — non crea, non chiude
 - File di log tenuto aperto con rotazione a cambio data (vs open/close a ogni messaggio)
+- Dipendenze esplicite via costruttore vs globali/Singleton: il costruttore rende visibile chi dipende da cosa
+- Separazione tipi IddCx dai settings generici: `globals.h` (tipi base) + `globals_iddcx.h` (tipi framework)
+- Valori derivati vs valori letti: `SDR_COLOR`/`HDR_COLOR` sono calcolati da settings, non settings loro stessi
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -113,6 +131,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `DeviceAdd`, `D0Entry`, `InitAdapter`
 - UMDF come DLL in `WUDFHost.exe`
 - Pipe driver↔companion app: `StartNamedPipeServer` → `NamedPipeServer` → `HandleClient`; ciclo di vita dell'handle gestito da `HandleClient`
+- Ordine inizializzazione driver: `DriverEntry` (settings) → `DeviceAdd` (`new IndirectDeviceContext`) → `D0Entry` (`InitAdapter`)
+- `IddCxGetVersion` + `IDARG_OUT_GETVERSION`: versioning runtime del framework
 
 ### Librerie esterne
 - TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari
@@ -123,14 +143,15 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ### Virtual Display Driver — analisi e refactoring
 - **Fork di studio**: `ghostintheshell-192/Virtual-Display-Driver-Ref` — fork di `itsmikethetech/Virtual-Display-Driver`. Detach dal parent richiesto a GitHub support (le PR defaultano sull'upstream). Pubblico.
 - **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 120-col.
-- **Progetto console rinominato `MttVddRefactor`** (era `MttVddSettings`): contiene sia i moduli settings che logging, organizzati con filtri Visual Studio (`src/settings`, `src/logging`, `header/settings`, `header/logging`).
+- **Progetto console `MttVddRefactor`**: banco di prova isolato per le classi refactorizzate. Naming file allineato: `.vcxproj` e `.vcxproj.filters` rinominati da `MttVddSettings` a `MttVddRefactor`, `<RootNamespace>` aggiornato.
 - **Branch `refactor/globals` (mergiato)**: ~50 globali migrate in `DriverSettings` con sotto-struct in `globals.h`. Istanza globale `g_settings`.
 - **Branch `refactor/settings-reading` (mergiato — PR #3)**: architettura settings completata:
-  - `SettingsLoader`: orchestratore. Possiede `DriverSettings`, il vettore `entries` (coppie chiave-puntatore), e i due reader
+  - `SettingsLoader`: orchestratore. Riceve `DriverSettings*` dall'esterno, possiede il vettore `entries` (coppie chiave-puntatore), e i due reader
   - `RegistryReader`: `RegGetValue` con flag `RRF_RT_*`, double-call pattern
   - `XmlReader`: TinyXML2, navigazione DOM segmento per segmento
-  - `utilities.h`: `convert_setting<T>`, `tokenize`, type alias `SettingValuePtr`
-  - `globals.h`: `DriverSettings` con sotto-struct allineate alla struttura XML/globali originali
+  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`
+  - `globals.h`: `DriverSettings` con sotto-struct (tipi base)
+  - `globals_iddcx.h`: struct con campi di tipo IddCx (`IDDCX_BITS_PER_COMPONENT`, `IDDCX_XOR_CURSOR_SUPPORT`), incluso solo dal driver
 - **Branch `refactor/logging` (mergiato)**: classe `Logger` estratta da `vddlog()`:
   - `enum class LogType` al posto del char per il tipo di log
   - File tenuto aperto con rotazione a cambio data (check `HasDateChanged()` a ogni messaggio)
@@ -138,10 +159,20 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `zoned_time` + `current_zone()` per timestamp locali (C++20)
   - `ToggleStandardLogs`/`ToggleDebugLogs`/`TogglePipedLogs` con apertura/chiusura file coerente
   - `SendToPipe` privato, chiamato internamente da `Message`
+  - Debug logging in `GetSetting`: confronto vecchio/nuovo valore dentro la lambda `std::visit`
+- **Branch `refactor/driver-cleanup` (in corso)**: integrazione moduli nel progetto driver
+  - Moduli (settings, logging, utilities) importati in MttVDD, compilano con il driver
+  - `EnabledQuery`, `GetIntegerSetting`, `GetStringSetting`, `GetDoubleSetting`, `LogQueries` rimosse — sostituite da `g_settings_manager.Init()` + `LoadSettings()`
+  - `SettingsQueryMap` ancora presente ma non più usata — da rimuovere
+  - Phase 5 (`ValidateEdidIntegration`, `ValidateAndSanitizeConfiguration` ecc.) ripulita: legge da `g_settings` invece di rileggere da disco. Bug trovati: `validationPassed` mai messo a false, sanitizzazione su variabili locali mai riscritte in `g_settings`
+  - `vddlog()` ancora definita con ~318 chiamate — sostituzione con `g_log.Message()` è il prossimo pezzo grosso
+  - `WStringToString` duplicata rimossa: una sola copia in `utilities.h` (namespace `Refactoring`), dichiarazione globale tolta da `Driver.h`
+  - Driver passato a C++20 (per chrono); warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
+  - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
 
 ### Ciclo di vita IddCx — lettura guidata
 - Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
-- `DriverEntry`: localizzata (~riga 2405), non ancora letta in dettaglio
+- `DriverEntry`: letta — carica settings, poi registra callback `DeviceAdd`
 - `DeviceAdd`: letta e chiusa
 - `D0Entry` + `InitAdapter`: esplorati
 - Stadi 4-5 (monitor, frame): non ancora toccati
@@ -152,14 +183,19 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ## Menù possibile
 *(possibilità, non impegni — nessun ordine, nessuna priorità)*
 
-- VDD refactoring: integrare `Logger` nel driver al posto di `vddlog` — sostituzione delle chiamate
-- VDD refactoring: estrarre `WStringToString` / `LogQueries` — decidere dove mettere le utility di conversione
+- VDD refactoring: sostituire 318 chiamate `vddlog()` con `g_log.Message()` — meccanico ma grosso
+- VDD refactoring: rimuovere `SettingsQueryMap` (non più usata)
+- VDD refactoring: rimuovere definizione di `vddlog()` e `SendToPipe()` vecchie
 - VDD refactoring: pensare alla scrittura dei settings (registro) — `SetSetting`
+- VDD refactoring: estrarre caricamento monitor config (risoluzioni/refresh rates) — forma diversa dagli scalari
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
-- VDD: `DriverEntry` in dettaglio
 - VDD: stadi 4-5 del ciclo di vita (monitor, frame)
-- VDD: chiudere i difetti parcheggiati (`new`/`C6011`, `RegCloseKey`)
+- VDD: chiudere i difetti parcheggiati (`new`/`C6011`)
 - Teoria + esercizio: puntatori, reference, const, double pointer — consolidamento fondamenta
+- Teoria + esercizio: lambda — cattura, closure, teoria
+- Teoria + esercizio: std::visit + std::variant — meccanismo e uso
+- Teoria + esercizio: static vs shared linking, CRT
+- Teoria + esercizio: visibilità tra unità di traduzione (extern, dichiarazione vs definizione)
 - Teoria + esercizio: inizializzazione membri in C++ — esercizi mirati
 - Teoria + esercizio: overload resolution — riconoscere quale overload si sta invocando
 - Puntatori: giro di ripasso a sorpresa (richiesto da Valentina)
