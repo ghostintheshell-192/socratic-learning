@@ -30,6 +30,13 @@ Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine 
 - **Esercizio suggerito**: code review mirate su funzioni con rami multipli — "cosa stampa questa funzione se tutto va bene?"
 - **Ultima osservazione**: 2026-08-28
 
+### 5. Fidarsi di IntelliSense vs il compilatore
+- **Cosa**: assume che la mancanza di errori in IntelliSense significhi che il codice compila
+- **Caso concreto**: (2026-09-09) aggiunto membro `Logger*` a `XmlReader`, IntelliSense non segnava errori, ma il compilatore sì (`Logger` non dichiarato — mancava l'include)
+- **Causa radice**: IntelliSense ha un suo motore di parsing separato dal compilatore; può avere un'idea diversa di cosa è visibile
+- **Contromisura**: compilare sempre prima di concludere che qualcosa funziona
+- **Ultima osservazione**: 2026-09-09
+
 ## Teoria da consolidare
 
 ### Puntatori, reference, const
@@ -37,6 +44,30 @@ Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine 
 - **Dettaglio**: "a malapena ti saprei spiegare cosa sono". Il doppio puntatore "l'ho capito e non l'ho capito — non riesco a immaginarmelo"
 - **Approccio**: teoria + esercizio mirato, collegato al filo conduttore ownership/lifetime
 - **Ultima osservazione**: 2026-08-28
+- **Aggiornamento 2026-09-09**: la "giungla di puntatori" creata passando `DriverSettings*` a SettingsLoader ha provocato disagio e tentativo di cercare scorciatoie (extern, globale). Il concetto è usato correttamente (puntatore a struct esterna → entries puntano ai campi), ma la complessità percepita rimane alta
+
+### Lambda functions
+- **Stato**: usate correttamente nella pratica (cattura, `this`, parametri), teoria non consolidata
+- **Dettaglio**: cattura e closure non affrontate in teoria. Le lambda sono usate concretamente in `std::visit` e in `GetSetting` (cattura di `raw_reg_value`, `value_key`, `this`)
+- **Approccio**: ripasso teoria quando riemerge il tema naturalmente
+- **Richiesta esplicita di Valentina**: 2026-09-09
+
+### std::visit + std::variant
+- **Stato**: pattern usato operativamente, da ripassare sia come meccanismo che come uso pratico
+- **Dettaglio**: sa che `std::visit` chiama il callable col tipo concreto, sa usare `auto*` + `remove_pointer_t` + `decltype`. Da consolidare: perché funziona, le alternative, i limiti
+- **Richiesta esplicita di Valentina**: 2026-09-09
+
+### Static vs shared linking
+- **Stato**: non compreso
+- **Caso concreto**: (2026-09-09) errore LNK2038 — mismatch `_ITERATOR_DEBUG_LEVEL` e `RuntimeLibrary` tra `tinyxml2.lib` (Debug, CRT dinamica) e driver (CRT statica release). Risolto usando la versione shared/release della lib, ma Valentina ha dichiarato di non aver capito la differenza static/shared
+- **Collegamento**: CRT statica vs dinamica, cosa succede al linking, perché il driver UMDF usa CRT statica in release anche in config Debug
+- **Richiesta esplicita di Valentina**: 2026-09-09
+
+### Visibilità tra unità di traduzione (extern, scope globale)
+- **Stato**: regola nota ma non interiorizzata ("non mi ricordo queste cose")
+- **Caso concreto**: (2026-09-09) voleva accedere a `g_settings` da `settings_loader.cpp` — ha proposto `extern`, poi `friend`, poi variabile globale, senza distinzione chiara tra i tre meccanismi. Dopo guida ha riconosciuto che passare per costruttore era la scelta coerente col design
+- **Collegamento**: compilazione separata, unità di traduzione, dichiarazione vs definizione
+- **Ultima osservazione**: 2026-09-09
 
 ## Pattern positivi — da sfruttare
 
@@ -45,6 +76,7 @@ Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine 
 - **Sa eliminare**: riconosce quando la soluzione più semplice è togliere (dependency dllimport, wstring)
 - **Chiede feedback strutturato**: a fine sessione ha chiesto valutazione esplicita pregi/difetti e ha suggerito lei stessa come migliorare il processo tutoriale
 - **Autoconsapevolezza sui propri limiti**: "so usarli ma non ti saprei spiegare cosa sono" è una dichiarazione precisa e utile, non una lamentela
+- **Riconosce quando sta correndo troppo**: (2026-09-09) "non mi calmo e inizio a fare le cose senza pensare" — consapevolezza in tempo reale del pattern, anche se il pattern si ripete
 
 ## Istruzioni operative (da Valentina, 2026-08-28)
 
