@@ -43,7 +43,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`RootElement()` di TinyXML2**: può restituire `nullptr` anche se `LoadFile` ha avuto successo (file con solo dichiarazione XML, nessun elemento radice)
 - **`strtok` vs `find`/`substr`**: `strtok` è C puro, modifica la stringa sorgente (riempie di `\0`), usa stato statico (non thread-safe). Tokenizzazione con `find`/`substr` è C++ idiomatico
 - **Dangling pointer/handle**: avevi un riferimento valido a una risorsa, qualcun altro l'ha liberata, il tuo riferimento punta nel vuoto. Distinto da memory leak (perdi il riferimento, la risorsa resta) e da memoria non inizializzata (nessun valore scritto)
-- **Named pipe**: meccanismo IPC di Windows — un "tubo" con un nome nel sistema (es. `\\.\pipe\VDDPipe`) tra due processi; uno scrive con `WriteFile`, l'altro legge dall'altro capo. Nel VDD: canale bidirezionale tra driver e companion app
+- **Named pipe**: meccanismo IPC di Windows — un "tubo" con un nome nel sistema (es. `\\\\.\\pipe\\VDDPipe`) tra due processi; uno scrive con `WriteFile`, l'altro legge dall'altro capo. Nel VDD: canale bidirezionale tra driver e companion app
 - **`explicit` sui costruttori**: impedisce al compilatore di usare quel costruttore per conversioni implicite. `today = local_days_value` non compila; serve `today = year_month_day{local_days_value}`. Chi progetta la classe decide se una conversione è abbastanza "ovvia" da essere implicita
 - **Dichiarazione vs assegnazione**: `Type var{value}` è inizializzazione alla dichiarazione; `var = Type{value}` è assegnazione a variabile esistente (costruisce un temporaneo e lo assegna). Sintassi diversa per momenti diversi nella vita della variabile
 - **`std::chrono` C++20**: `std::format("{:%Y-%m-%d %X}", zt)` formatta direttamente tipi chrono. `zoned_time{tz, time_point}` converte da UTC a ora locale. `current_zone()` restituisce puntatore a oggetto statico della timezone database (non posseduto, non va liberato). `floor<days>` su `local_time` vs `system_clock::now()` (UTC) — differenza rilevante a cavallo della mezzanotte
@@ -56,6 +56,14 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`ReadFile` su named pipe**: `ReadFile` è un'API generica che legge da qualsiasi `HANDLE` di I/O (file, pipe, socket), non solo da file su disco
 - **`map::find` vs iterazione**: se la struttura è una mappa, usare `find()` per il lookup — il `for` vanifica il vantaggio della mappa
 - **Dispatch table**: mappa comando→funzione (con `std::function`) per eliminare catene if/else — ogni comando è un elemento della mappa, il dispatch è un lookup + chiamata
+- **`std::sort` con comparatore custom**: le tuple hanno `operator<` lessicografico automatico; le struct richiedono un comparatore esplicito (lambda) passato come terzo argomento a `sort`
+- **`std::sort` + `std::unique` pattern**: `unique` rimuove solo duplicati *adiacenti*, quindi serve un `sort` prima per raggruppare gli elementi uguali
+- **`std::tie`**: spacchetta una tupla in variabili nominate — reso superfluo dall'uso di struct con campi nominati
+- **Dichiarazione vs definizione di costruttore**: `Foo();` è una dichiarazione (promessa che il corpo esiste altrove); `Foo() = default;` è una definizione (il compilatore genera il corpo). Dichiarazione senza corpo → `LNK2019`
+- **Default member initializers + `= default`**: il costruttore generato usa i valori assegnati sui campi nella dichiarazione; evita primitivi non inizializzati senza scrivere un costruttore a mano
+- **`[[nodiscard]]` attribute**: il compilatore avvisa se il valore di ritorno di una funzione marcata `[[nodiscard]]` viene scartato
+- **Operatore virgola in C++**: valuta l'espressione sinistra, scarta il risultato, restituisce il valore destro — `if (expr, 11)` è sempre truthy; bug pattern
+- **Frequenza di refresh come frazione**: numeratore/denominatore per rappresentare frequenze non intere in modo esatto (59.94 Hz = 60000/1001). Windows usa `DISPLAYCONFIG_RATIONAL` con `Numerator`/`Denominator`
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -79,9 +87,12 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **std::visit + std::variant — ripasso teoria**: meccanismo, perché funziona, alternative, limiti. Richiesta esplicita di Valentina
 - **Static vs shared linking**: mismatch LNK2038 su `tinyxml2.lib` (debug/release, CRT statica/dinamica). Valentina ha dichiarato di non aver capito la differenza. Da affrontare come teoria
 - **Visibilità tra unità di traduzione (extern, scope globale)**: confusione tra `extern`, `friend`, variabile globale. Da collegare a compilazione separata e dichiarazione vs definizione
-- **Centralizzazione lettura monitor config**: la sezione risoluzioni/refresh rates nell'XML ha struttura diversa (liste ripetute, non scalari) dal pattern attuale di SettingsLoader. Valutare estensione futura
 - **Separazione granulare Get/Set in SettingsLoader**: l'accoppiamento XML+struct è coerenza, non difetto — ma rivalutare se emergono cicli di vita diversi per i due aspetti
 - **Dispatch table con `std::function`**: evoluzione della mappa comandi in HandleClient — idea del collega, dichiarata come `prova`, da sviluppare
+- **Metadati SMPTE ST.2086**: cosa sono, a cosa servono nel contesto HDR — richiesta esplicita di Valentina, emersa dall'analisi delle strutture colore/HDR nel driver
+- **Incoerenza refresh rate tra percorsi**: `loadSettings` produce num/den in Hz, `LoadEdidProfile` produceva multiplier/nominal — stessa struttura dati, semantica diversa. Da risolvere col design MonitorProfile
+- **Rimozione strutture intermedie EDID**: `EdidProfileData`, `VddColorMatrix`, `VddGammaRamp`, `VddHdrMetadata`, funzioni `Convert*` — da rimuovere mano a mano che `MonitorProfile` le sostituisce
+- **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura
 
 ## Argomenti toccati — indice compatto
 
@@ -103,6 +114,12 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Early return come alternativa a `else`
 - Scope per limitare la vita di un `lock_guard`
 - `map::find` vs iterazione per lookup
+- `std::sort` con comparatore custom, `std::unique` per deduplicare adiacenti
+- `std::tie` per tuple unpacking
+- Dichiarazione vs definizione di costruttore; `= default` con default member initializers
+- `[[nodiscard]]` attribute
+- Operatore virgola in C++ e bug pattern
+- Frequenza di refresh come frazione (DISPLAYCONFIG_RATIONAL)
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -139,6 +156,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Valori derivati vs valori letti: `SDR_COLOR`/`HDR_COLOR` sono calcolati da settings, non settings loro stessi
 - Consolidamento funzioni duplicate: tre `UpdateXml...` → una unica `UpdateXmlSetting` (il tipo al punto di scrittura è sempre wstring)
 - HandleClient: mappa comando→struct per dispatch dei toggle, tokenizzazione del buffer, `SetSetting` per scrittura settings
+- `Resolution` struct: campi nominati (width, height, refresh_num, refresh_den) al posto di `tuple<int,int,int,int>`
+- `MonitorProfile`: separazione proprietà fisiche del monitor (color primaries, luminanza, gamma, color space, HDR capabilities, modi, preferred resolution) dalle decisioni del driver (DriverSettings)
+- Design a due profili (`default_profile` + `custom_profile`) + flag selettore: nessun merge condizionale, nessuna struttura intermedia, sovrascrittura totale del custom al cambio monitor
+- Distinzione EDID binario (blob 256 byte per il sistema operativo) vs EDID profilo (XML con capacità monitor)
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -190,6 +211,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - Driver passato a C++20; warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
   - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
   - `.clang-format` ColumnLimit: 120 → 150
+  - `Resolution` struct introdotta in `globals.h`, sostituisce `vector<tuple<int,int,int,int>>` in tutto il driver
+  - `MonitorProfile` struct definita in `globals.h`: proprietà fisiche del monitor separate da DriverSettings
+  - Chain mode management EDID rimosso: `GenerateModesFromEdid`, `FindPreferredModeFromEdid`, `MergeAndOptimizeModes`, `OptimizeModeList`, `ValidateModeList`, `ApplyEdidProfile`, `LoadEdidProfile` — 7 funzioni
+  - Bug fix: operatore virgola in condizione `GETSETTINGS` — `else if (expr, 11)` entrava sempre
   - **Da fare**: trim virgolette per SETGPU (la companion app manda il nome GPU tra virgolette)
 
 ### Ciclo di vita IddCx — lettura guidata
@@ -207,7 +232,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 
 - VDD refactoring: trim virgolette per SETGPU in HandleClient
 - VDD refactoring: evolvere la mappa comandi in dispatch table (`std::function`)
-- VDD refactoring: estrarre caricamento monitor config (risoluzioni/refresh rates) — forma diversa dagli scalari
+- VDD refactoring: collegare MonitorProfile al caricamento — due istanze (default + custom), flag selettore, validazione preferred mode
+- VDD refactoring: migrare campi fisici da DriverSettings a MonitorProfile (color primaries, luminanza, gamma, color space) e aggiornare punti di lettura
+- VDD refactoring: rimuovere strutture intermedie EDID rimaste (EdidProfileData, VddColorMatrix, VddGammaRamp, VddHdrMetadata, funzioni Convert*)
+- VDD refactoring: estendere XmlReader per supportare monitor_profile.xml (elementi ripetuti, struttura diversa dagli scalari)
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
 - VDD refactoring: `XmlReader::SetSetting` non salva il file su disco (solo DOM in memoria) — verificare/correggere
 - VDD: stadi 4-5 del ciclo di vita (monitor, frame)
@@ -219,6 +247,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Teoria + esercizio: visibilità tra unità di traduzione (extern, dichiarazione vs definizione)
 - Teoria + esercizio: inizializzazione membri in C++ — esercizi mirati
 - Teoria + esercizio: overload resolution — riconoscere quale overload si sta invocando
+- Teoria + esercizio: metadati SMPTE ST.2086 — cosa sono, come funzionano nel contesto HDR
 - Puntatori: giro di ripasso a sorpresa (richiesto da Valentina)
 - Portare la calcolatrice nel repo e fare il punto sul suo stato
 - Guida alla creazione dei certificati di test
