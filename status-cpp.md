@@ -50,6 +50,12 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Ordine inizializzazione membri**: i membri si inizializzano nell'ordine di dichiarazione nell'header, non nell'ordine dell'initializer list. La ragione: c'è un solo distruttore, che deve invertire un ordine unico. L'initializer list va allineato alla dichiarazione per evitare confusione
 - **Macro TCHAR e versioni A/W**: `CreateDirectory`, `RegGetValue` ecc. sono macro che si espandono a `…W` (wide) o `…A` (narrow) in base al CharacterSet del progetto. Si può chiamare direttamente la versione esplicita (`CreateDirectoryA`) per bypassare la macro
 - **Multibyte = codifica dove un carattere può occupare più di un byte**: `WideCharToMultiByte` con code page `CP_UTF8` produce UTF-8. "Multibyte" è il termine generico di Windows, non uno specifico encoding
+- **`std::format` (C++20)**: sostituto di `stringstream` per costruire stringhe formattate — template del messaggio leggibile come frase continua. Specifier: `{}` generico, `{:#x}` esadecimale con prefisso `0x`, `{:p}` puntatore. Non usa modificatori di lunghezza stile printf (niente `l`). Non formatta enum senza cast esplicito (`static_cast<int>(enumVal)`)
+- **Early return come alternativa a else**: se il ramo di errore fa `return`, il codice dopo il `return` è implicitamente il caso di successo — l'`else` è superfluo. Riduce il nesting
+- **Scope per limitare il tempo di vita di un lock_guard**: graffe `{}` attorno a un blocco che acquisisce un `lock_guard` — il mutex viene rilasciato alla chiusura dello scope, non alla fine della funzione
+- **`ReadFile` su named pipe**: `ReadFile` è un'API generica che legge da qualsiasi `HANDLE` di I/O (file, pipe, socket), non solo da file su disco
+- **`map::find` vs iterazione**: se la struttura è una mappa, usare `find()` per il lookup — il `for` vanifica il vantaggio della mappa
+- **Dispatch table**: mappa comando→funzione (con `std::function`) per eliminare catene if/else — ogni comando è un elemento della mappa, il dispatch è un lookup + chiamata
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -74,6 +80,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Static vs shared linking**: mismatch LNK2038 su `tinyxml2.lib` (debug/release, CRT statica/dinamica). Valentina ha dichiarato di non aver capito la differenza. Da affrontare come teoria
 - **Visibilità tra unità di traduzione (extern, scope globale)**: confusione tra `extern`, `friend`, variabile globale. Da collegare a compilazione separata e dichiarazione vs definizione
 - **Centralizzazione lettura monitor config**: la sezione risoluzioni/refresh rates nell'XML ha struttura diversa (liste ripetute, non scalari) dal pattern attuale di SettingsLoader. Valutare estensione futura
+- **Separazione granulare Get/Set in SettingsLoader**: l'accoppiamento XML+struct è coerenza, non difetto — ma rivalutare se emergono cicli di vita diversi per i due aspetti
+- **Dispatch table con `std::function`**: evoluzione della mappa comandi in HandleClient — idea del collega, dichiarata come `prova`, da sviluppare
 
 ## Argomenti toccati — indice compatto
 
@@ -88,9 +96,13 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `sizeof` su classi vs `size()` su contenuti
 - `std::string` e gestione interna del null terminator
 - `std::chrono` C++20: `zoned_time`, `current_zone`, `std::format` con tipi chrono
+- `std::format` C++20: specifier, cast per enum, confronto con `stringstream`
 - Dangling pointer/handle
 - Ordine inizializzazione membri e initializer list
 - Lambda: cattura variabili e `this` (uso pratico, teoria da consolidare)
+- Early return come alternativa a `else`
+- Scope per limitare la vita di un `lock_guard`
+- `map::find` vs iterazione per lookup
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -101,6 +113,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Rinominazione progetto Visual Studio: allineare cartella, `.vcxproj`, `.vcxproj.filters`, `.sln`, `<RootNamespace>`
 - Warning WDK trattati come errori (`/WX`): disabilitare warning specifici per header di sistema (`4471`)
 - Mismatch CRT tra librerie: `_ITERATOR_DEBUG_LEVEL`, `RuntimeLibrary` — static vs shared, debug vs release
+- `.clang-format`: ColumnLimit portato a 150
 
 ### Windows API
 - Registry: `RegOpenKeyEx`, `RegQueryValueExW`, `RegGetValue`, `RegCloseKey`
@@ -108,7 +121,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Handle: tipi opachi, `HKEY`
 - Double-call pattern per lettura valori registro (size query → allocate → read)
 - `RegGetValue`: parametri `lpSubKey` vs `lpValueName`, flag `RRF_RT_*`
-- Named pipe: IPC tra processi, `WriteFile` per scrivere su `HANDLE`
+- Named pipe: IPC tra processi, `ReadFile`/`WriteFile` su `HANDLE` — `ReadFile` come API generica per qualsiasi handle I/O
 - Versioni A/W delle API: `CreateDirectoryA` vs `CreateDirectoryW`, bypass della macro TCHAR
 - `WideCharToMultiByte` con `CP_UTF8`: conversione wide→narrow, termine "multibyte" in Windows
 - DXGI: `DXGI_ADAPTER_DESC::Description` è `WCHAR[128]`, non ha versione narrow
@@ -124,6 +137,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Dipendenze esplicite via costruttore vs globali/Singleton: il costruttore rende visibile chi dipende da cosa
 - Separazione tipi IddCx dai settings generici: `globals.h` (tipi base) + `globals_iddcx.h` (tipi framework)
 - Valori derivati vs valori letti: `SDR_COLOR`/`HDR_COLOR` sono calcolati da settings, non settings loro stessi
+- Consolidamento funzioni duplicate: tre `UpdateXml...` → una unica `UpdateXmlSetting` (il tipo al punto di scrittura è sempre wstring)
+- HandleClient: mappa comando→struct per dispatch dei toggle, tokenizzazione del buffer, `SetSetting` per scrittura settings
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -133,16 +148,17 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Pipe driver↔companion app: `StartNamedPipeServer` → `NamedPipeServer` → `HandleClient`; ciclo di vita dell'handle gestito da `HandleClient`
 - Ordine inizializzazione driver: `DriverEntry` (settings) → `DeviceAdd` (`new IndirectDeviceContext`) → `D0Entry` (`InitAdapter`)
 - `IddCxGetVersion` + `IDARG_OUT_GETVERSION`: versioning runtime del framework
+- Phase 5 rimossa: 6 funzioni di validazione/monitoring che erano impalcatura vuota (dati che non venivano salvati, performance monitor su vettore vuoto, conteggi predeterminati)
 
 ### Librerie esterne
-- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari
+- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari. `SetText` per scrittura
 - Visitor pattern (discusso, scartato per il caso d'uso)
 
 ## Materiale attivo
 
 ### Virtual Display Driver — analisi e refactoring
 - **Fork di studio**: `ghostintheshell-192/Virtual-Display-Driver-Ref` — fork di `itsmikethetech/Virtual-Display-Driver`. Detach dal parent richiesto a GitHub support (le PR defaultano sull'upstream). Pubblico.
-- **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 120-col.
+- **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 150-col.
 - **Progetto console `MttVddRefactor`**: banco di prova isolato per le classi refactorizzate. Naming file allineato: `.vcxproj` e `.vcxproj.filters` rinominati da `MttVddSettings` a `MttVddRefactor`, `<RootNamespace>` aggiornato.
 - **Branch `refactor/globals` (mergiato)**: ~50 globali migrate in `DriverSettings` con sotto-struct in `globals.h`. Istanza globale `g_settings`.
 - **Branch `refactor/settings-reading` (mergiato — PR #3)**: architettura settings completata:
@@ -158,17 +174,23 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `HANDLE*` alla pipe globale — uso senza possesso, dereferenziato a ogni chiamata
   - `zoned_time` + `current_zone()` per timestamp locali (C++20)
   - `ToggleStandardLogs`/`ToggleDebugLogs`/`TogglePipedLogs` con apertura/chiusura file coerente
-  - `SendToPipe` privato, chiamato internamente da `Message`
+  - `SendToPipe` reso pubblico — passo intermedio, mescola responsabilità log/protocollo
   - Debug logging in `GetSetting`: confronto vecchio/nuovo valore dentro la lambda `std::visit`
-- **Branch `refactor/driver-cleanup` (in corso)**: integrazione moduli nel progetto driver
+- **Branch `refactor/driver-cleanup` (in corso — PR da fare)**: integrazione moduli e pulizia driver
   - Moduli (settings, logging, utilities) importati in MttVDD, compilano con il driver
   - `EnabledQuery`, `GetIntegerSetting`, `GetStringSetting`, `GetDoubleSetting`, `LogQueries` rimosse — sostituite da `g_settings_manager.Init()` + `LoadSettings()`
-  - `SettingsQueryMap` ancora presente ma non più usata — da rimuovere
-  - Phase 5 (`ValidateEdidIntegration`, `ValidateAndSanitizeConfiguration` ecc.) ripulita: legge da `g_settings` invece di rileggere da disco. Bug trovati: `validationPassed` mai messo a false, sanitizzazione su variabili locali mai riscritte in `g_settings`
-  - `vddlog()` ancora definita con ~318 chiamate — sostituzione con `g_log.Message()` è il prossimo pezzo grosso
-  - `WStringToString` duplicata rimossa: una sola copia in `utilities.h` (namespace `Refactoring`), dichiarazione globale tolta da `Driver.h`
-  - Driver passato a C++20 (per chrono); warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
+  - `SettingsQueryMap` rimossa
+  - Phase 5 rimossa interamente: 6 funzioni + `g_IntegrationStatus` — nessuna dipendenza esterna
+  - `vddlog()` rimossa completamente (~318 chiamate → `g_log.Message()` con LogType)
+  - `std::format` introdotto in sostituzione di `stringstream` dove possibile
+  - `SendToPipe` standalone rimossa, metodo spostato a public nel Logger
+  - `UpdateXmlGpuSetting` e `UpdateXmlDisplayCountSetting` consolidate in `UpdateXmlSetting`
+  - `HandleClient` refactored: tokenizzazione buffer, mappa comando→struct, `SetSetting` su SettingsLoader/XmlReader
+  - `WStringToString` duplicata rimossa: una sola copia in `utilities.h`
+  - Driver passato a C++20; warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
   - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
+  - `.clang-format` ColumnLimit: 120 → 150
+  - **Da fare**: trim virgolette per SETGPU (la companion app manda il nome GPU tra virgolette)
 
 ### Ciclo di vita IddCx — lettura guidata
 - Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
@@ -183,12 +205,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ## Menù possibile
 *(possibilità, non impegni — nessun ordine, nessuna priorità)*
 
-- VDD refactoring: sostituire 318 chiamate `vddlog()` con `g_log.Message()` — meccanico ma grosso
-- VDD refactoring: rimuovere `SettingsQueryMap` (non più usata)
-- VDD refactoring: rimuovere definizione di `vddlog()` e `SendToPipe()` vecchie
-- VDD refactoring: pensare alla scrittura dei settings (registro) — `SetSetting`
+- VDD refactoring: trim virgolette per SETGPU in HandleClient
+- VDD refactoring: evolvere la mappa comandi in dispatch table (`std::function`)
 - VDD refactoring: estrarre caricamento monitor config (risoluzioni/refresh rates) — forma diversa dagli scalari
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
+- VDD refactoring: `XmlReader::SetSetting` non salva il file su disco (solo DOM in memoria) — verificare/correggere
 - VDD: stadi 4-5 del ciclo di vita (monitor, frame)
 - VDD: chiudere i difetti parcheggiati (`new`/`C6011`)
 - Teoria + esercizio: puntatori, reference, const, double pointer — consolidamento fondamenta
