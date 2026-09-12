@@ -64,6 +64,13 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`[[nodiscard]]` attribute**: il compilatore avvisa se il valore di ritorno di una funzione marcata `[[nodiscard]]` viene scartato
 - **Operatore virgola in C++**: valuta l'espressione sinistra, scarta il risultato, restituisce il valore destro — `if (expr, 11)` è sempre truthy; bug pattern
 - **Frequenza di refresh come frazione**: numeratore/denominatore per rappresentare frequenze non intere in modo esatto (59.94 Hz = 60000/1001). Windows usa `DISPLAYCONFIG_RATIONAL` con `Numerator`/`Denominator`
+- **Direzione callback IddCx**: `SetGammaRamp` e `SetDefaultHdrMetadata` ricevono dati dal sistema (il sistema dice al driver "applica questo"), non li inviano. In un virtual display senza hardware, sono no-op
+- **Matrice di trasformazione colore 3×4**: la parte 3×3 è la trasformazione (rotazione/scaling tra spazi colore), la quarta colonna è l'offset additivo (bias) per canale RGB. Valori derivati matematicamente dalle coordinate di cromaticità dei primari di ogni color space (standardizzati)
+- **Conversioni SMPTE ST.2086**: cromaticità × 50000 → `UINT16`, luminanza × 10000 → `UINT32`. I tipi sono dettati dallo standard, non dal codice
+- **Metodi come funzioni pure**: un metodo che modifica un campo membro e lo restituisce accumula stato tra chiamate successive. Soluzione: creare una variabile locale, riempirla, restituirla — nessun effetto collaterale
+- **`UNREFERENCED_PARAMETER` macro**: per parametri di callback obbligatori che il codice non usa — dice al compilatore "è intenzionale", invece di silenziare il warning globalmente
+- **`static_cast<float>(double_value)`**: narrowing esplicito da double a float — dice al compilatore "la perdita di precisione è intenzionale"
+- **RVO (Return Value Optimization)**: il compilatore può eliminare la copia quando si restituisce una variabile locale — il valore viene costruito direttamente nella destinazione
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -89,16 +96,16 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Visibilità tra unità di traduzione (extern, scope globale)**: confusione tra `extern`, `friend`, variabile globale. Da collegare a compilazione separata e dichiarazione vs definizione
 - **Separazione granulare Get/Set in SettingsLoader**: l'accoppiamento XML+struct è coerenza, non difetto — ma rivalutare se emergono cicli di vita diversi per i due aspetti
 - **Dispatch table con `std::function`**: evoluzione della mappa comandi in HandleClient — idea del collega, dichiarata come `prova`, da sviluppare
-- **Metadati SMPTE ST.2086**: cosa sono, a cosa servono nel contesto HDR — richiesta esplicita di Valentina, emersa dall'analisi delle strutture colore/HDR nel driver
 - **Incoerenza refresh rate tra percorsi**: `loadSettings` produce num/den in Hz, `LoadEdidProfile` produceva multiplier/nominal — stessa struttura dati, semantica diversa. Da risolvere col design MonitorProfile
-- **Rimozione strutture intermedie EDID**: `EdidProfileData`, `VddColorMatrix`, `VddGammaRamp`, `VddHdrMetadata`, funzioni `Convert*` — da rimuovere mano a mano che `MonitorProfile` le sostituisce
-- **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura
+- **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura uno alla volta
+- **Separazione gamma correction da matrice colore**: i metodi `Get_*` di MonitorProfile mescolano trasformazione color space e gamma correction nella stessa matrice (come faceva il vecchio codice). Concettualmente sono due operazioni distinte. Da separare quando i metodi avranno un consumatore reale
+- **Due loader separati**: `DriverEntry` → `g_settings_manager.LoadSettings()` (settings strutturati) e `VirtualDisplayDriverDeviceAdd` → `loadSettings()` (modi monitor, GPU, monitor count). Due percorsi di caricamento distinti per dati che vivono in posti diversi
 
 ## Argomenti toccati — indice compatto
 
 ### Linguaggio C++
 - Puntatori, reference, passaggio per valore/riferimento
-- Template: specializzazione, istanziazione, definizione in header
+- Template: specializzazione, istanziazione, definizione in header, template su tipo di ritorno (`apply_range<T>`)
 - `std::variant`, `std::visit`, `std::remove_pointer_t`, `decltype`
 - `using` (type alias)
 - Overload resolution e le sue trappole
@@ -120,6 +127,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `[[nodiscard]]` attribute
 - Operatore virgola in C++ e bug pattern
 - Frequenza di refresh come frazione (DISPLAYCONFIG_RATIONAL)
+- `static_cast` per narrowing esplicito (double→float)
+- `UNREFERENCED_PARAMETER` macro
+- RVO (Return Value Optimization)
+- Metodi come funzioni pure vs metodi con effetti collaterali
+- `enum class` al posto di confronti stringa (`ColorSpaceType`)
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -160,6 +172,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - `MonitorProfile`: separazione proprietà fisiche del monitor (color primaries, luminanza, gamma, color space, HDR capabilities, modi, preferred resolution) dalle decisioni del driver (DriverSettings)
 - Design a due profili (`default_profile` + `custom_profile`) + flag selettore: nessun merge condizionale, nessuna struttura intermedia, sovrascrittura totale del custom al cambio monitor
 - Distinzione EDID binario (blob 256 byte per il sistema operativo) vs EDID profilo (XML con capacità monitor)
+- Eliminazione livello intermedio colore/HDR: le struct intermedie (`VddGammaRamp`, `VddHdrMetadata`, `VddColorMatrix`, `EdidProfileData`) e gli store (`g_GammaRampStore`, `g_HdrMetadataStore`) non servono — `MonitorProfile` tiene i dati grezzi, la conversione ai formati IddCx avviene al momento dell'uso
+- `apply_range<T>`: utility generica clamp+moltiplica+cast, template sul tipo di ritorno per gestire vincoli di formato (UINT16 vs UINT32 in SMPTE ST.2086)
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -170,6 +184,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Ordine inizializzazione driver: `DriverEntry` (settings) → `DeviceAdd` (`new IndirectDeviceContext`) → `D0Entry` (`InitAdapter`)
 - `IddCxGetVersion` + `IDARG_OUT_GETVERSION`: versioning runtime del framework
 - Phase 5 rimossa: 6 funzioni di validazione/monitoring che erano impalcatura vuota (dati che non venivano salvati, performance monitor su vettore vuoto, conteggi predeterminati)
+- Callback colore/HDR (`SetGammaRamp`, `SetDefaultHdrMetadata`): direzione *in* (il sistema invia dati al driver), non *out*. In un virtual display senza hardware fisico sono no-op
 
 ### Librerie esterne
 - TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari. `SetText` per scrittura
@@ -186,8 +201,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `SettingsLoader`: orchestratore. Riceve `DriverSettings*` dall'esterno, possiede il vettore `entries` (coppie chiave-puntatore), e i due reader
   - `RegistryReader`: `RegGetValue` con flag `RRF_RT_*`, double-call pattern
   - `XmlReader`: TinyXML2, navigazione DOM segmento per segmento
-  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`
-  - `globals.h`: `DriverSettings` con sotto-struct (tipi base)
+  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`, `apply_range<T>`
+  - `globals.h`: `DriverSettings` con sotto-struct (tipi base), `Resolution`, `ColorMatrix`, `MonitorProfile`, `ColorSpaceType` enum
   - `globals_iddcx.h`: struct con campi di tipo IddCx (`IDDCX_BITS_PER_COMPONENT`, `IDDCX_XOR_CURSOR_SUPPORT`), incluso solo dal driver
 - **Branch `refactor/logging` (mergiato)**: classe `Logger` estratta da `vddlog()`:
   - `enum class LogType` al posto del char per il tipo di log
@@ -212,8 +227,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
   - `.clang-format` ColumnLimit: 120 → 150
   - `Resolution` struct introdotta in `globals.h`, sostituisce `vector<tuple<int,int,int,int>>` in tutto il driver
-  - `MonitorProfile` struct definita in `globals.h`: proprietà fisiche del monitor separate da DriverSettings
+  - `MonitorProfile` struct definita in `globals.h`: proprietà fisiche del monitor separate da DriverSettings. Metodi `Get_sRGB/DCI_P3/REC_2020/Adobe_RGB` come funzioni pure (restituiscono `ColorMatrix` locale). `ColorSpaceType` enum. `apply_range<T>` in utilities
   - Chain mode management EDID rimosso: `GenerateModesFromEdid`, `FindPreferredModeFromEdid`, `MergeAndOptimizeModes`, `OptimizeModeList`, `ValidateModeList`, `ApplyEdidProfile`, `LoadEdidProfile` — 7 funzioni
+  - Strutture intermedie colore/HDR rimosse: `EdidProfileData`, `VddColorMatrix`, `VddGammaRamp`, `VddHdrMetadata`, `g_GammaRampStore`, `g_HdrMetadataStore`, tutte le funzioni `Convert*` (7), `SelectBitDepthFromColorSpace` (mai chiamata), blocco `APPLY EDID INTEGRATION` commentato
+  - Callback `SetGammaRamp` e `SetDefaultHdrMetadata` svuotate: `UNREFERENCED_PARAMETER` + commento + `return STATUS_SUCCESS`
   - Bug fix: operatore virgola in condizione `GETSETTINGS` — `else if (expr, 11)` entrava sempre
   - **Da fare**: trim virgolette per SETGPU (la companion app manda il nome GPU tra virgolette)
 
@@ -232,10 +249,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 
 - VDD refactoring: trim virgolette per SETGPU in HandleClient
 - VDD refactoring: evolvere la mappa comandi in dispatch table (`std::function`)
-- VDD refactoring: collegare MonitorProfile al caricamento — due istanze (default + custom), flag selettore, validazione preferred mode
-- VDD refactoring: migrare campi fisici da DriverSettings a MonitorProfile (color primaries, luminanza, gamma, color space) e aggiornare punti di lettura
-- VDD refactoring: rimuovere strutture intermedie EDID rimaste (EdidProfileData, VddColorMatrix, VddGammaRamp, VddHdrMetadata, funzioni Convert*)
-- VDD refactoring: estendere XmlReader per supportare monitor_profile.xml (elementi ripetuti, struttura diversa dagli scalari)
+- VDD refactoring: dare a MonitorProfile il suo primo consumatore reale — spostare le callback ParseMonitorDescription/QueryTargetModes a leggere dal profilo invece che da `monitorModes`
+- VDD refactoring: popolare `g_default_profile` da `g_settings` dopo `LoadSettings()` in `DriverEntry`
+- VDD refactoring: migrare campi fisici da DriverSettings a MonitorProfile uno alla volta, aggiornando i consumatori
+- VDD refactoring: estendere XmlReader per supportare monitor_profile.xml (elementi ripetuti, struttura diversa dagli scalari) — per popolare `g_custom_profile`
+- VDD refactoring: separare gamma correction dalla matrice colore nei metodi `Get_*` (quando avranno un consumatore)
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
 - VDD refactoring: `XmlReader::SetSetting` non salva il file su disco (solo DOM in memoria) — verificare/correggere
 - VDD: stadi 4-5 del ciclo di vita (monitor, frame)
@@ -247,7 +265,6 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Teoria + esercizio: visibilità tra unità di traduzione (extern, dichiarazione vs definizione)
 - Teoria + esercizio: inizializzazione membri in C++ — esercizi mirati
 - Teoria + esercizio: overload resolution — riconoscere quale overload si sta invocando
-- Teoria + esercizio: metadati SMPTE ST.2086 — cosa sono, come funzionano nel contesto HDR
 - Puntatori: giro di ripasso a sorpresa (richiesto da Valentina)
 - Portare la calcolatrice nel repo e fare il punto sul suo stato
 - Guida alla creazione dei certificati di test
