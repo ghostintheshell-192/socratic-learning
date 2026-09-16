@@ -37,6 +37,27 @@ Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine 
 - **Contromisura**: compilare sempre prima di concludere che qualcosa funziona
 - **Ultima osservazione**: 2026-09-09
 
+### 6. Copia vs riferimento nei loop e nelle funzioni
+- **Cosa**: dimentica `&` nel range-for (`for (auto tok : v)` invece di `for (auto& tok : v)`), scrive parametri per valore quando bastava `const&`
+- **Casi concreti**: (2026-09-16) `vector_trim` con `for (auto tok : tokens)` — modificava copie locali, il vettore originale restava invariato. `SetConfigurationFile(std::string path)` per valore dove bastava `const std::string&`
+- **Causa radice**: non ha interiorizzato il default del C++ (copia per valore) come qualcosa da contrastare attivamente ogni volta. Il codice compila, il bug è silenzioso
+- **Contromisura suggerita**: ogni volta che si scrive un range-for o un parametro funzione, chiedersi: "sto leggendo o modificando? Se modifico, serve `&`. Se leggo, serve `const&`?"
+- **Ultima osservazione**: 2026-09-16
+
+### 7. Semantica dei valori sentinella della standard library
+- **Cosa**: non conosceva il valore concreto di `std::string::npos` (`(size_t)-1`), quindi non poteva prevedere il comportamento aritmetico (`npos + 1` = overflow a 0)
+- **Caso concreto**: (2026-09-16) `tokenize` originale — `str.substr(npos + 1, str.size())` funzionava per caso grazie all'overflow. Scoperto durante la riscrittura
+- **Causa radice**: tratta i valori sentinella come "valori magici" senza chiedersi cosa sono concretamente. Connesso alla tendenza a non leggere la documentazione
+- **Contromisura suggerita**: quando un confronto con una costante della standard library appare nel codice (npos, end(), nullptr), chiedersi: "cos'è concretamente questo valore? come partecipa all'aritmetica se ci faccio operazioni?"
+- **Ultima osservazione**: 2026-09-16
+
+### 8. Tendenza a complicare prima di semplificare
+- **Cosa**: quando un algoritmo non funziona, tende a cercare soluzioni alternative (ricorsione, pattern diversi) prima di pulire e fixare la versione che ha
+- **Caso concreto**: (2026-09-16) riscrittura di `tokenize` — dopo aver identificato il bug nell'overflow, ha provato una versione ricorsiva (con bug proprio: valore di ritorno perso), poi varie versioni iterative con ridondanze, prima di arrivare al flusso semplice
+- **Causa radice**: il pensiero associativo la porta a esplorare alternative. Positivo come pattern di apprendimento, ma nella pratica conviene prima far funzionare l'approccio più semplice
+- **Contromisura suggerita**: regola "fix first, refactor second" — prima far funzionare la versione che hai, poi pulirla. Il salto a un pattern diverso è giustificato solo se il corrente è strutturalmente inadatto
+- **Ultima osservazione**: 2026-09-16
+
 ## Teoria da consolidare
 
 ### Puntatori, reference, const
@@ -73,10 +94,12 @@ Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine 
 
 - **Ragionamento architetturale forte**: le decisioni di design (separazione classi, precedenza registro, percorso unificato, variant di puntatori) arrivano spontaneamente prima dei suggerimenti
 - **Resilienza nel debugging concettuale**: non molla quando qualcosa non torna (es. `find_first_of` — ha resistito, fatto prove, chiesto chiarimenti ripetuti finché non ha fatto click)
-- **Sa eliminare**: riconosce quando la soluzione più semplice è togliere (dependency dllimport, wstring)
+- **Sa eliminare**: riconosce quando la soluzione più semplice è togliere (dependency dllimport, wstring, UpdateXmlSetting, split duplicata, struct Options)
 - **Chiede feedback strutturato**: a fine sessione ha chiesto valutazione esplicita pregi/difetti e ha suggerito lei stessa come migliorare il processo tutoriale
 - **Autoconsapevolezza sui propri limiti**: "so usarli ma non ti saprei spiegare cosa sono" è una dichiarazione precisa e utile, non una lamentela
 - **Riconosce quando sta correndo troppo**: (2026-09-09) "non mi calmo e inizio a fare le cose senza pensare" — consapevolezza in tempo reale del pattern, anche se il pattern si ripete
+- **Analisi indipendente dei consumatori**: (2026-09-16) ha mappato autonomamente tutti i punti che leggono `monitorModes` e tutte le funzioni/consumatori di `AdapterOption` prima che Claude glielo chiedesse
+- **Accetta i vicoli ciechi senza frustrazione eccessiva**: (2026-09-16) nella riscrittura di `tokenize` ha provato la ricorsione, ha trovato il bug da sola, è tornata indietro all'iterativo senza drammi. L'autocritica ("sono un disastro con gli algoritmi") è stata momentanea, non paralizzante
 
 ## Istruzioni operative (da Valentina, 2026-08-28)
 
