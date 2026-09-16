@@ -71,6 +71,11 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **`UNREFERENCED_PARAMETER` macro**: per parametri di callback obbligatori che il codice non usa — dice al compilatore "è intenzionale", invece di silenziare il warning globalmente
 - **`static_cast<float>(double_value)`**: narrowing esplicito da double a float — dice al compilatore "la perdita di precisione è intenzionale"
 - **RVO (Return Value Optimization)**: il compilatore può eliminare la copia quando si restituisce una variabile locale — il valore viene costruito direttamente nella destinazione
+- **`std::string::npos`**: è `(size_t)-1`, cioè il massimo valore di `size_t`. `npos + 1` fa overflow unsigned e wrappa a 0. Non è un valore magico — è un intero come gli altri e partecipa all'aritmetica
+- **`for (auto x : v)` copia, `for (auto& x : v)` no**: senza `&` nel range-for, ogni elemento viene copiato in una variabile locale — le modifiche alla copia non toccano il contenitore. Compila senza errori, bug silenzioso
+- **`const std::string&` come parametro**: quando una funzione legge un parametro senza modificarlo, riferimento const evita una copia inutile
+- **TinyXML2 `SaveFile`**: `SetText` modifica il DOM in memoria; per persistere su disco serve `SaveFile()` esplicito. Il DOM e il file sono due cose separate
+- **Strategia di migrazione produttore→consumatore con ponte temporaneo**: quando si sposta la sorgente dati, prima il produttore scrive nella nuova struttura + copia nella vecchia (ponte), poi si migrano i consumatori uno alla volta, infine si rimuove il ponte e la vecchia struttura
 
 ## Concetti in corso
 - Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
@@ -100,6 +105,9 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura uno alla volta
 - **Separazione gamma correction da matrice colore**: i metodi `Get_*` di MonitorProfile mescolano trasformazione color space e gamma correction nella stessa matrice (come faceva il vecchio codice). Concettualmente sono due operazioni distinte. Da separare quando i metodi avranno un consumatore reale
 - **Due loader separati**: `DriverEntry` → `g_settings_manager.LoadSettings()` (settings strutturati) e `VirtualDisplayDriverDeviceAdd` → `loadSettings()` (modi monitor, GPU, monitor count). Due percorsi di caricamento distinti per dati che vivono in posti diversi
+- **AdapterOption — refactoring**: classe che modella la *selezione* di una GPU (nome + LUID + flag), non l'adapter hardware. Mescola la decisione (da dove viene il nome: XML vs file) con la ricerca (enumerare GPU, risolvere LUID via PCI bus). La decisione appartiene al driver, la ricerca alla classe. `load` e `xmlprovide` condividono la stessa logica di fallback. Obiettivo: portare dentro il driver, separare i due aspetti
+- **`s_KnownMonitorModes2` — dove mettere la conversione**: oggi è globale, ricostruita da `RebuildKnownMonitorModesCache` (che ora legge dal profilo). Pattern analogo a `Get_sRGB()` & co., ma `DISPLAYCONFIG_VIDEO_SIGNAL_INFO` è un tipo Windows/IddCx. Metterlo in MonitorProfile inquinerebbe il profilo con dipendenze IddCx. Da decidere dove vive la conversione
+- **MonitorProfile custom — loader**: il `g_custom_profile` è dichiarato ma vuoto. Serve un loader per popolarlo da file di configurazione (estendere XmlReader per struttura diversa dagli scalari, elementi ripetuti)
 
 ## Argomenti toccati — indice compatto
 
@@ -113,6 +121,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Costruttori `explicit` e conversioni implicite
 - `sizeof` su classi vs `size()` su contenuti
 - `std::string` e gestione interna del null terminator
+- `std::string::npos` come `(size_t)-1` e overflow aritmetico unsigned
 - `std::chrono` C++20: `zoned_time`, `current_zone`, `std::format` con tipi chrono
 - `std::format` C++20: specifier, cast per enum, confronto con `stringstream`
 - Dangling pointer/handle
@@ -132,6 +141,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - RVO (Return Value Optimization)
 - Metodi come funzioni pure vs metodi con effetti collaterali
 - `enum class` al posto di confronti stringa (`ColorSpaceType`)
+- Range-for: `auto` (copia) vs `auto&` (riferimento) — bug silenzioso
+- `const std::string&` come parametro di sola lettura
 
 ### Build system e toolchain
 - Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
@@ -174,6 +185,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Distinzione EDID binario (blob 256 byte per il sistema operativo) vs EDID profilo (XML con capacità monitor)
 - Eliminazione livello intermedio colore/HDR: le struct intermedie (`VddGammaRamp`, `VddHdrMetadata`, `VddColorMatrix`, `EdidProfileData`) e gli store (`g_GammaRampStore`, `g_HdrMetadataStore`) non servono — `MonitorProfile` tiene i dati grezzi, la conversione ai formati IddCx avviene al momento dell'uso
 - `apply_range<T>`: utility generica clamp+moltiplica+cast, template sul tipo di ritorno per gestire vincoli di formato (UINT16 vs UINT32 in SMPTE ST.2086)
+- Migrazione dati con ponte temporaneo: produttore scrive nella nuova struttura + copia nella vecchia, consumatori migrati uno alla volta, ponte rimosso alla fine
+- Analisi "cosa modella una classe": AdapterOption modella una *selezione* (risultato), non un adapter (hardware)
 
 ### Driver Windows (IddCx/WDF)
 - Ciclo di vita a 6 stadi
@@ -187,7 +200,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Callback colore/HDR (`SetGammaRamp`, `SetDefaultHdrMetadata`): direzione *in* (il sistema invia dati al driver), non *out*. In un virtual display senza hardware fisico sono no-op
 
 ### Librerie esterne
-- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari. `SetText` per scrittura
+- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari. `SetText` per scrittura, `SaveFile` per persistenza su disco (DOM ≠ file)
 - Visitor pattern (discusso, scartato per il caso d'uso)
 
 ## Materiale attivo
@@ -201,7 +214,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `SettingsLoader`: orchestratore. Riceve `DriverSettings*` dall'esterno, possiede il vettore `entries` (coppie chiave-puntatore), e i due reader
   - `RegistryReader`: `RegGetValue` con flag `RRF_RT_*`, double-call pattern
   - `XmlReader`: TinyXML2, navigazione DOM segmento per segmento
-  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`, `apply_range<T>`
+  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`, `apply_range<T>`, `vector_trim`
   - `globals.h`: `DriverSettings` con sotto-struct (tipi base), `Resolution`, `ColorMatrix`, `MonitorProfile`, `ColorSpaceType` enum
   - `globals_iddcx.h`: struct con campi di tipo IddCx (`IDDCX_BITS_PER_COMPONENT`, `IDDCX_XOR_CURSOR_SUPPORT`), incluso solo dal driver
 - **Branch `refactor/logging` (mergiato)**: classe `Logger` estratta da `vddlog()`:
@@ -220,8 +233,8 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - `vddlog()` rimossa completamente (~318 chiamate → `g_log.Message()` con LogType)
   - `std::format` introdotto in sostituzione di `stringstream` dove possibile
   - `SendToPipe` standalone rimossa, metodo spostato a public nel Logger
-  - `UpdateXmlGpuSetting` e `UpdateXmlDisplayCountSetting` consolidate in `UpdateXmlSetting`
-  - `HandleClient` refactored: tokenizzazione buffer, mappa comando→struct, `SetSetting` su SettingsLoader/XmlReader
+  - `UpdateXmlGpuSetting`, `UpdateXmlDisplayCountSetting` e `UpdateXmlSetting` consolidate e poi rimosse (sostituite da `XmlReader::SetSetting` con `SaveFile`)
+  - `HandleClient` refactored: tokenizzazione buffer, mappa comando→struct, `SetSetting` su SettingsLoader/XmlReader, trim virgolette via `vector_trim`
   - `WStringToString` duplicata rimossa: una sola copia in `utilities.h`
   - Driver passato a C++20; warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
   - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
@@ -232,7 +245,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
   - Strutture intermedie colore/HDR rimosse: `EdidProfileData`, `VddColorMatrix`, `VddGammaRamp`, `VddHdrMetadata`, `g_GammaRampStore`, `g_HdrMetadataStore`, tutte le funzioni `Convert*` (7), `SelectBitDepthFromColorSpace` (mai chiamata), blocco `APPLY EDID INTEGRATION` commentato
   - Callback `SetGammaRamp` e `SetDefaultHdrMetadata` svuotate: `UNREFERENCED_PARAMETER` + commento + `return STATUS_SUCCESS`
   - Bug fix: operatore virgola in condizione `GETSETTINGS` — `else if (expr, 11)` entrava sempre
-  - **Da fare**: trim virgolette per SETGPU (la companion app manda il nome GPU tra virgolette)
+  - **MonitorProfile come consumer reale**: `loadSettings` scrive in `g_default_profile.modes`, `RebuildKnownMonitorModesCache` legge dal profilo, le 4 callback IddCx (ParseMonitorDescription, ParseMonitorDescription2, MonitorQueryModes, MonitorQueryTargetModes2) leggono da `g_default_profile.modes`. Globale `monitorModes` rimossa
+  - **XmlReader::SetSetting persiste su disco**: aggiunta gestione `file_path`, `SaveFile()` dopo `SetText`
+  - **`split()` rimossa**: duplicato di `tokenize`; `tokenize` riscritta per eliminare overflow `npos + 1`
+  - **Struct anonima `Options` rimossa**: wrappava solo `AdapterOption Adapter`, nessun motivo per il contenitore
 
 ### Ciclo di vita IddCx — lettura guidata
 - Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
@@ -247,15 +263,13 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 ## Menù possibile
 *(possibilità, non impegni — nessun ordine, nessuna priorità)*
 
-- VDD refactoring: trim virgolette per SETGPU in HandleClient
+- VDD refactoring: AdapterOption — portare dentro il driver, separare selezione da ricerca
+- VDD refactoring: `s_KnownMonitorModes2` — decidere dove mettere la conversione Resolution→DISPLAYCONFIG_VIDEO_SIGNAL_INFO senza inquinare MonitorProfile con tipi IddCx
+- VDD refactoring: MonitorProfile custom — loader per il profilo personalizzato da file
 - VDD refactoring: evolvere la mappa comandi in dispatch table (`std::function`)
-- VDD refactoring: dare a MonitorProfile il suo primo consumatore reale — spostare le callback ParseMonitorDescription/QueryTargetModes a leggere dal profilo invece che da `monitorModes`
-- VDD refactoring: popolare `g_default_profile` da `g_settings` dopo `LoadSettings()` in `DriverEntry`
 - VDD refactoring: migrare campi fisici da DriverSettings a MonitorProfile uno alla volta, aggiornando i consumatori
-- VDD refactoring: estendere XmlReader per supportare monitor_profile.xml (elementi ripetuti, struttura diversa dagli scalari) — per popolare `g_custom_profile`
 - VDD refactoring: separare gamma correction dalla matrice colore nei metodi `Get_*` (quando avranno un consumatore)
 - VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
-- VDD refactoring: `XmlReader::SetSetting` non salva il file su disco (solo DOM in memoria) — verificare/correggere
 - VDD: stadi 4-5 del ciclo di vita (monitor, frame)
 - VDD: chiudere i difetti parcheggiati (`new`/`C6011`)
 - Teoria + esercizio: puntatori, reference, const, double pointer — consolidamento fondamenta
