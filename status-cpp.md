@@ -105,9 +105,10 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura uno alla volta
 - **Separazione gamma correction da matrice colore**: i metodi `Get_*` di MonitorProfile mescolano trasformazione color space e gamma correction nella stessa matrice (come faceva il vecchio codice). Concettualmente sono due operazioni distinte. Da separare quando i metodi avranno un consumatore reale
 - **Due loader separati**: `DriverEntry` → `g_settings_manager.LoadSettings()` (settings strutturati) e `VirtualDisplayDriverDeviceAdd` → `loadSettings()` (modi monitor, GPU, monitor count). Due percorsi di caricamento distinti per dati che vivono in posti diversi
-- **AdapterOption — refactoring**: classe che modella la *selezione* di una GPU (nome + LUID + flag), non l'adapter hardware. Mescola la decisione (da dove viene il nome: XML vs file) con la ricerca (enumerare GPU, risolvere LUID via PCI bus). La decisione appartiene al driver, la ricerca alla classe. `load` e `xmlprovide` condividono la stessa logica di fallback. Obiettivo: portare dentro il driver, separare i due aspetti
+- **AdapterOption — refactoring**: classe che modella la *selezione* di una GPU (nome + LUID + flag), non l'adapter hardware. Mescola la decisione (da dove viene il nome: XML vs file) con la ricerca (enumerare GPU, risolvere LUID via PCI bus). La decisione appartiene al driver, la classe. `load` e `xmlprovide` condividono la stessa logica di fallback. Obiettivo: portare dentro il driver, separare i due aspetti
 - **`s_KnownMonitorModes2` — dove mettere la conversione**: oggi è globale, ricostruita da `RebuildKnownMonitorModesCache` (che ora legge dal profilo). Pattern analogo a `Get_sRGB()` & co., ma `DISPLAYCONFIG_VIDEO_SIGNAL_INFO` è un tipo Windows/IddCx. Metterlo in MonitorProfile inquinerebbe il profilo con dipendenze IddCx. Da decidere dove vive la conversione
 - **MonitorProfile custom — loader**: il `g_custom_profile` è dichiarato ma vuoto. Serve un loader per popolarlo da file di configurazione (estendere XmlReader per struttura diversa dagli scalari, elementi ripetuti)
+- **Memoria, rappresentazione binaria, complemento a 2**: emersa dal wrap di `npos + 1` nella riscrittura di `tokenize`. Valentina non ha studiato queste basi all'università e vuole una lezione completa: come la memoria è organizzata e interpretata nel software, non solo il complemento a 2 in sé. Richiesta esplicita
 
 ## Argomenti toccati — indice compatto
 
@@ -279,6 +280,7 @@ Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) st
 - Teoria + esercizio: visibilità tra unità di traduzione (extern, dichiarazione vs definizione)
 - Teoria + esercizio: inizializzazione membri in C++ — esercizi mirati
 - Teoria + esercizio: overload resolution — riconoscere quale overload si sta invocando
+- Teoria + esercizio: memoria, rappresentazione binaria, complemento a 2 — come la memoria è organizzata e interpretata
 - Puntatori: giro di ripasso a sorpresa (richiesto da Valentina)
 - Portare la calcolatrice nel repo e fare il punto sul suo stato
 - Guida alla creazione dei certificati di test
