@@ -6,10 +6,19 @@ Memoria di Claude per il percorso di studio di Valentina. Come insegnare sta nel
 
 | Percorso | Status | Sessioni | Materiale |
 |---|---|---|---|
-| C++ | `status-cpp.md` | `sessioni/` | fork VDD: `ghostintheshell-192/Virtual-Display-Driver-Ref` (repo separato) · upstream per confronto: `VirtualDrivers/Virtual-Display-Driver` (branch `master`) |
+| C++ | `status-cpp.md` | `sessioni/` | fork VDD (vedi repository esterni) |
 | Reverse engineering | `reverse-engineering/status-re.md` | `reverse-engineering/sessioni/` | campione sul PC di Valentina, non nel repo |
 
 Ogni status ha le stesse sezioni: richieste esplicite, concetti acquisiti, concetti in corso, parking lot, materiale, menù possibile. I concetti acquisiti sono anche la riserva da cui pescare le domande di ripasso.
+
+## Repository esterni
+
+Il codice di studio non sta in questo repo. Quando se ne aggiunge uno, va elencato qui.
+
+| Repository | Ruolo | Branch | Percorso |
+|---|---|---|---|
+| `ghostintheshell-192/Virtual-Display-Driver-Ref` | fork di studio del VDD, dove Valentina fa il refactoring (pubblico) | `main`; lavoro sui branch `refactor/…`, in corso `refactor/driver-cleanup` | C++ |
+| `VirtualDrivers/Virtual-Display-Driver` | upstream originale, solo per confronto | `master` | C++ |
 
 ## Altri file
 
@@ -28,7 +37,7 @@ Ogni status ha le stesse sezioni: richieste esplicite, concetti acquisiti, conce
 1. **Nuovo file di sessione** nella cartella `sessioni/` del percorso, nome `AAAA-MM-GGTHHMMSSZ.md` (UTC). Testo discorsivo e sintetico: cosa si è fatto, cosa ha funzionato e cosa no, intuizioni o difficoltà notevoli, decisioni prese, fili aperti (come possibilità, non come compiti). Serve alla prossima istanza per riprendere tono e contesto, non solo i contenuti.
 2. **Status del percorso aggiornato**. Elenca, non spiega: una riga per voce. Niente date, niente impegni.
 3. **`riferimenti/registro-tutor.md`** aggiornato se sono emerse osservazioni nuove.
-4. Questo README, se la struttura è cambiata.
+4. Questo README, se la struttura o l'elenco dei repository esterni è cambiato.
 
 Un solo commit per chiusura, messaggio breve in italiano.
 
