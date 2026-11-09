@@ -17,7 +17,7 @@ Il codice di studio non sta in questo repo. Quando se ne aggiunge uno, va elenca
 
 | Repository | Ruolo | Branch | Percorso |
 |---|---|---|---|
-| `ghostintheshell-192/Virtual-Display-Driver-Ref` | fork di studio del VDD, dove Valentina fa il refactoring (pubblico) | `main`; lavoro sui branch `refactor/…`, in corso `refactor/driver-cleanup` | C++ |
+| `ghostintheshell-192/Virtual-Display-Driver-Ref` | fork di studio del VDD, dove Valentina fa il refactoring (pubblico) | `master`; lavoro sui branch `refactor/…`, in corso `refactor/driver-cleanup` | C++ |
 | `VirtualDrivers/Virtual-Display-Driver` | upstream originale, solo per confronto | `master` | C++ |
 
 ## Altri file
