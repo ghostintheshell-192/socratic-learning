@@ -1,286 +1,136 @@
-# Status — Studio C++
+# Status — C++
 
-Mappa dei concetti del percorso. Questo file è la memoria di Claude tra le sessioni: elenca, non spiega. La rielaborazione dei contenuti vive nei quaderni di Valentina.
+Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Valentina. I concetti acquisiti sono anche la riserva per le domande di ripasso.
 
-Gli handoff discorsivi delle singole sessioni stanno in `sessioni/` (un file per sessione, nome = timestamp UTC).
+## Richieste esplicite di teoria
+*(da offrire per prime nel menù)*
 
-Il registro delle osservazioni tutoriali (lacune, pattern, aree di esercizio) sta in `riferimenti/registro-tutor.md`.
+- Puntatori, reference, `const`, doppi puntatori — li usa bene ma la teoria è frammentaria; il doppio puntatore "non riesce a immaginarlo"
+- Lambda — cattura e closure (le usa già in `std::visit` e `GetSetting`)
+- `std::visit` + `std::variant` — perché funziona, alternative, limiti
+- Linking statico e condiviso, CRT — dall'errore `LNK2038` su `tinyxml2.lib`
+- Visibilità tra unità di traduzione — `extern`, scope globale, dichiarazione e definizione
+- Memoria e rappresentazione binaria, complemento a 2 — come la memoria è organizzata e interpretata (nata da `npos + 1`)
+- Creazione dei certificati di test
 
 ## Concetti acquisiti
-- Puntatori — lvalue/rvalue col test operativo (a sinistra di `=` / prendibile con `&`), non l'euristica contenitore/contenuto: `*ptr` lvalue, `&ptr` rvalue
-- Puntatori — tipo = numero di livelli di indirezione; `new` deve combaciare col numero di stelle
-- Puntatori — dimensione (8 byte su x64, sempre) vs tipo (governa la deref); `sizeof` di un'espressione = dimensione del suo tipo
-- Handle opaco: `DECLARE_HANDLE` / `STRICT`, una struct fantasma per ogni *tipo* di handle (mai istanziata) al solo scopo di type-checking a compile-time; senza `STRICT` tutti `void*` e intercambiabili
-- Il framework come codice e memoria, non solo come contratto: driver UMDF = DLL caricata in `WUDFHost.exe` insieme a framework e IddCx, un solo spazio di indirizzamento; l'handle punta a una struct di cui non hai l'header (incapsulamento in C + compatibilità binaria)
-- `delete p` libera l'oggetto puntato, non azzera `p` (da cui `p = nullptr` esplicito)
-- Possesso ≠ possesso dell'indirizzo: dello stesso indirizzo esistono più copie, proprietario è chi ha il *dovere* di liberarlo
-- Cascata dei distruttori: si ferma sul primo puntatore grezzo (distruggere 8 byte non tocca l'altro capo)
-- Assenza di `delete` = ambigua: o dimenticanza, o non-possesso; il distruttore scritto per esteso che *non* nomina un membro è una dichiarazione di non-possesso
-- Da re-interrogare periodicamente su richiesta di Valentina (non ancora consolidati al 100%: doppi puntatori, distinzione dato/indirizzo sotto pressione)
-- **Driver come libreria**: non ha un `main()`, è caricato dal sistema; tu scrivi le risposte (callback), il sistema decide quando fare le domande
-- **WDF vs IddCx**: WDF generico (device, power, cleanup — qualsiasi driver), IddCx specifico per display indiretti (adapter, monitor, frame). Lo stadio 3 (D0Entry → InitAdapter) è il punto di contatto
-- **Ciclo di vita IddCx** — sei stadi in ordine fisso: registrazione → configurazione device → accensione → display → funzionamento → teardown
-- **Callback**: registrare = riempire campi di struct con puntatori a funzione; scrivere = il corpo di quelle funzioni
-- **D0Entry → InitAdapter**: D0Entry è WDF (power), dentro chiama InitAdapter che è IddCx. Il pattern è identico a DeviceAdd: riempi struct → passa al framework → ricevi handle. `IddCxAdapterInitAsync` ritorna subito; completamento via callback `AdapterInitFinished`. Lo stesso `IndirectDeviceContext` agganciato a due handle diversi (device e adapter) — secondo cartello, stessa casa
-- **Passaggio per valore vs per riferimento**: senza `&` il C++ copia — la funzione modifica la copia locale, l'originale resta invariato. Con `&` il parametro è un alias dell'originale
-- **Template specializations**: `template<> T convert_setting<T>(const wstring&)` — una specializzazione per tipo (bool, int, double, wstring), il chiamante sceglie il tipo, il template sceglie la conversione
-- **Registry Windows**: `REG_DWORD` (intero 32 bit) e `REG_SZ` (stringa) sono i tipi rilevanti; non esiste un tipo nativo double; `RegQueryValueExW` con `lpType` restituisce il tipo del valore; il codice originale passava `NULL` e indovinava con due tentativi
-- **Compilazione vs linking**: il compilatore lavora su un `.cpp` alla volta producendo un `.obj`; errori `C`-prefisso = compilatore, `LNK`-prefisso = linker. Il linker incolla gli `.obj` in un eseguibile
-- **Name mangling C++**: il compilatore codifica nome funzione + tipi parametri + tipo ritorno in una stringa unica. Tipi C (`void`, `const char*`) producono mangling stabile tra toolset; tipi C++ (`std::string`) possono divergere tra toolset diversi — ecco perché le DLL esportano quasi solo tipi C
-- **`__declspec(dllexport/dllimport)`**: `dllexport` nella DLL sorgente, `dllimport` nel consumatore. Il linker del consumatore cerca i simboli in un `.lib` di import, non direttamente nella `.dll`
-- **Template: definizione nell'header obbligatoria**: un template è una ricetta, non codice; il compilatore genera il codice solo quando incontra un uso concreto con un tipo specifico, e in quel momento deve vedere il corpo. Se il corpo è in un `.cpp` separato, l'unità di traduzione che usa il template non può generare nulla → `LNK2019`
-- **`std::visit` + `std::variant`**: `std::visit` prende un callable e una variant, chiama il callable col tipo concreto contenuto. Con `auto*` nel lambda + `std::remove_pointer_t<decltype(ptr)>` si deduce il tipo senza bisogno di enum o switch esterno. La variant è sia contenitore che discriminante
-- **`= default` non inizializza i tipi primitivi**: il costruttore generato delega ai singoli membri; i tipi con costruttore proprio (`std::string`, `std::vector`) si inizializzano, i primitivi (`bool`, `int`, `HKEY`) restano a valore indeterminato
-- **Overload resolution**: lo stesso nome di funzione può avere comportamenti radicalmente diversi a seconda dei tipi passati — `std::string::replace` vs `std::replace` (da `<algorithm>`), `find(char)` vs `find(const char*)`, `find_first_of(const char*, pos, count)` dove `count` è la lunghezza del set di caratteri da cercare, non il range di ricerca
-- **`RegGetValue` vs `RegQueryValueEx`**: `RegGetValue` garantisce null-termination per `REG_SZ` e permette filtraggio per tipo via flag `RRF_RT_*`
-- **`sizeof(std::string)` vs `std::string::size()`**: `sizeof` restituisce la dimensione dell'oggetto classe (32 su x64: puntatore, size, capacity, SSO buffer), non la lunghezza del contenuto. `size()` restituisce la lunghezza del contenuto
-- **Double-call pattern per API registro**: prima chiamata con buffer NULL per ottenere la dimensione necessaria, `resize()` della stringa, seconda chiamata per leggere. Dopo la lettura `resize(dwBufferSize - 1)` per rimuovere il null terminator incluso nel conteggio
-- **`std::string` e null terminator**: `std::string` non usa `\0` per determinare la lunghezza — tiene traccia separatamente. Un `\0` scritto dentro la stringa è un carattere come un altro; `size()` non lo riconosce come terminatore
-- **`RegGetValue` parametri**: `lpSubKey` è una sotto-chiave relativa a `hKey` (comodità per evitare `RegOpenKeyEx` separata); `lpValueName` è il nome del valore. Nel VDD i valori sono piatti sotto la chiave principale → `lpSubKey = ""`, `lpValueName` = nome completo
-- **Character set del progetto**: "Not Set" / "Multi-Byte" / "Unicode" determina se le macro TCHAR (`RegGetValue`, `CharUpperBuff` ecc.) risolvono a versione A (narrow) o W (wide). Coerenza obbligatoria tra apertura della chiave e chiamate successive
-- **Igiene sugli errori**: se una funzione può fallire (tipo ritorno lo dice), controllare il risultato — anche se una chiamata precedente alla stessa funzione è riuscita. Condizioni esterne possono cambiare tra le due chiamate
-- **`GetText()` di TinyXML2**: restituisce `nullptr` se l'elemento non ha testo. Assegnare `nullptr` a `std::string` è UB/crash. Check obbligatorio prima dell'assegnazione
-- **`RootElement()` di TinyXML2**: può restituire `nullptr` anche se `LoadFile` ha avuto successo (file con solo dichiarazione XML, nessun elemento radice)
-- **`strtok` vs `find`/`substr`**: `strtok` è C puro, modifica la stringa sorgente (riempie di `\0`), usa stato statico (non thread-safe). Tokenizzazione con `find`/`substr` è C++ idiomatico
-- **Dangling pointer/handle**: avevi un riferimento valido a una risorsa, qualcun altro l'ha liberata, il tuo riferimento punta nel vuoto. Distinto da memory leak (perdi il riferimento, la risorsa resta) e da memoria non inizializzata (nessun valore scritto)
-- **Named pipe**: meccanismo IPC di Windows — un "tubo" con un nome nel sistema (es. `\\\\.\\pipe\\VDDPipe`) tra due processi; uno scrive con `WriteFile`, l'altro legge dall'altro capo. Nel VDD: canale bidirezionale tra driver e companion app
-- **`explicit` sui costruttori**: impedisce al compilatore di usare quel costruttore per conversioni implicite. `today = local_days_value` non compila; serve `today = year_month_day{local_days_value}`. Chi progetta la classe decide se una conversione è abbastanza "ovvia" da essere implicita
-- **Dichiarazione vs assegnazione**: `Type var{value}` è inizializzazione alla dichiarazione; `var = Type{value}` è assegnazione a variabile esistente (costruisce un temporaneo e lo assegna). Sintassi diversa per momenti diversi nella vita della variabile
-- **`std::chrono` C++20**: `std::format("{:%Y-%m-%d %X}", zt)` formatta direttamente tipi chrono. `zoned_time{tz, time_point}` converte da UTC a ora locale. `current_zone()` restituisce puntatore a oggetto statico della timezone database (non posseduto, non va liberato). `floor<days>` su `local_time` vs `system_clock::now()` (UTC) — differenza rilevante a cavallo della mezzanotte
-- **Ordine inizializzazione membri**: i membri si inizializzano nell'ordine di dichiarazione nell'header, non nell'ordine dell'initializer list. La ragione: c'è un solo distruttore, che deve invertire un ordine unico. L'initializer list va allineato alla dichiarazione per evitare confusione
-- **Macro TCHAR e versioni A/W**: `CreateDirectory`, `RegGetValue` ecc. sono macro che si espandono a `…W` (wide) o `…A` (narrow) in base al CharacterSet del progetto. Si può chiamare direttamente la versione esplicita (`CreateDirectoryA`) per bypassare la macro
-- **Multibyte = codifica dove un carattere può occupare più di un byte**: `WideCharToMultiByte` con code page `CP_UTF8` produce UTF-8. "Multibyte" è il termine generico di Windows, non uno specifico encoding
-- **`std::format` (C++20)**: sostituto di `stringstream` per costruire stringhe formattate — template del messaggio leggibile come frase continua. Specifier: `{}` generico, `{:#x}` esadecimale con prefisso `0x`, `{:p}` puntatore. Non usa modificatori di lunghezza stile printf (niente `l`). Non formatta enum senza cast esplicito (`static_cast<int>(enumVal)`)
-- **Early return come alternativa a else**: se il ramo di errore fa `return`, il codice dopo il `return` è implicitamente il caso di successo — l'`else` è superfluo. Riduce il nesting
-- **Scope per limitare il tempo di vita di un lock_guard**: graffe `{}` attorno a un blocco che acquisisce un `lock_guard` — il mutex viene rilasciato alla chiusura dello scope, non alla fine della funzione
-- **`ReadFile` su named pipe**: `ReadFile` è un'API generica che legge da qualsiasi `HANDLE` di I/O (file, pipe, socket), non solo da file su disco
-- **`map::find` vs iterazione**: se la struttura è una mappa, usare `find()` per il lookup — il `for` vanifica il vantaggio della mappa
-- **Dispatch table**: mappa comando→funzione (con `std::function`) per eliminare catene if/else — ogni comando è un elemento della mappa, il dispatch è un lookup + chiamata
-- **`std::sort` con comparatore custom**: le tuple hanno `operator<` lessicografico automatico; le struct richiedono un comparatore esplicito (lambda) passato come terzo argomento a `sort`
-- **`std::sort` + `std::unique` pattern**: `unique` rimuove solo duplicati *adiacenti*, quindi serve un `sort` prima per raggruppare gli elementi uguali
-- **`std::tie`**: spacchetta una tupla in variabili nominate — reso superfluo dall'uso di struct con campi nominati
-- **Dichiarazione vs definizione di costruttore**: `Foo();` è una dichiarazione (promessa che il corpo esiste altrove); `Foo() = default;` è una definizione (il compilatore genera il corpo). Dichiarazione senza corpo → `LNK2019`
-- **Default member initializers + `= default`**: il costruttore generato usa i valori assegnati sui campi nella dichiarazione; evita primitivi non inizializzati senza scrivere un costruttore a mano
-- **`[[nodiscard]]` attribute**: il compilatore avvisa se il valore di ritorno di una funzione marcata `[[nodiscard]]` viene scartato
-- **Operatore virgola in C++**: valuta l'espressione sinistra, scarta il risultato, restituisce il valore destro — `if (expr, 11)` è sempre truthy; bug pattern
-- **Frequenza di refresh come frazione**: numeratore/denominatore per rappresentare frequenze non intere in modo esatto (59.94 Hz = 60000/1001). Windows usa `DISPLAYCONFIG_RATIONAL` con `Numerator`/`Denominator`
-- **Direzione callback IddCx**: `SetGammaRamp` e `SetDefaultHdrMetadata` ricevono dati dal sistema (il sistema dice al driver "applica questo"), non li inviano. In un virtual display senza hardware, sono no-op
-- **Matrice di trasformazione colore 3×4**: la parte 3×3 è la trasformazione (rotazione/scaling tra spazi colore), la quarta colonna è l'offset additivo (bias) per canale RGB. Valori derivati matematicamente dalle coordinate di cromaticità dei primari di ogni color space (standardizzati)
-- **Conversioni SMPTE ST.2086**: cromaticità × 50000 → `UINT16`, luminanza × 10000 → `UINT32`. I tipi sono dettati dallo standard, non dal codice
-- **Metodi come funzioni pure**: un metodo che modifica un campo membro e lo restituisce accumula stato tra chiamate successive. Soluzione: creare una variabile locale, riempirla, restituirla — nessun effetto collaterale
-- **`UNREFERENCED_PARAMETER` macro**: per parametri di callback obbligatori che il codice non usa — dice al compilatore "è intenzionale", invece di silenziare il warning globalmente
-- **`static_cast<float>(double_value)`**: narrowing esplicito da double a float — dice al compilatore "la perdita di precisione è intenzionale"
-- **RVO (Return Value Optimization)**: il compilatore può eliminare la copia quando si restituisce una variabile locale — il valore viene costruito direttamente nella destinazione
-- **`std::string::npos`**: è `(size_t)-1`, cioè il massimo valore di `size_t`. `npos + 1` fa overflow unsigned e wrappa a 0. Non è un valore magico — è un intero come gli altri e partecipa all'aritmetica
-- **`for (auto x : v)` copia, `for (auto& x : v)` no**: senza `&` nel range-for, ogni elemento viene copiato in una variabile locale — le modifiche alla copia non toccano il contenitore. Compila senza errori, bug silenzioso
-- **`const std::string&` come parametro**: quando una funzione legge un parametro senza modificarlo, riferimento const evita una copia inutile
-- **TinyXML2 `SaveFile`**: `SetText` modifica il DOM in memoria; per persistere su disco serve `SaveFile()` esplicito. Il DOM e il file sono due cose separate
-- **Strategia di migrazione produttore→consumatore con ponte temporaneo**: quando si sposta la sorgente dati, prima il produttore scrive nella nuova struttura + copia nella vecchia (ponte), poi si migrano i consumatori uno alla volta, infine si rimuove il ponte e la vecchia struttura
 
-## Concetti in corso
-- Ownership transfer via puntatore consumato e azzerato dalla callee (visto su `pDeviceInit` in `WdfDeviceCreate`, VDD)
-- Vita agganciata: oggetto C++ (`new` in `DeviceAdd`) la cui `delete` sta in `Cleanup()`, chiamata dal framework via `EvtCleanupCallback` prima di distruggere l'oggetto proprietario — `new` e `delete` in funzioni lontane, invocate da soggetti diversi
-- Contesto WDF allocato *dentro* il blocco dell'oggetto device (`WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE` + `WdfDeviceCreate`); `WdfObjectGet_…` calcola un offset, non alloca
-- Versioning a runtime vs compile-time (`IDD_IS_FIELD_AVAILABLE`, VDD) — corretta un'interpretazione iniziale errata (protezione memoria)
-- **X-macros**: esplorazione in teoria — `#` (stringizzazione), `##` (token pasting), `.def` file come dati-only. Valentina ha identificato il caso d'uso (generare sia struct che mapping XML da un'unica definizione) ma ha poi optato per `std::visit` + variant
+### Memoria, puntatori, possesso
+- lvalue/rvalue col test operativo (sta a sinistra di `=`, si può prendere con `&`)
+- Tipo del puntatore = livelli di indirezione; dimensione sempre 8 byte su x64; il tipo governa la dereferenziazione
+- `delete p` libera l'oggetto, non azzera `p`
+- Possedere = avere il dovere di liberare, non avere l'indirizzo
+- La cascata dei distruttori si ferma sul puntatore grezzo
+- `delete` assente: dimenticanza o non-possesso; distruttore che non nomina un membro = non-possesso
+- Uso senza possesso (il `Logger` usa la pipe, non la crea né la chiude)
+- Dangling, leak, memoria non inizializzata: tre problemi diversi
+- Passaggio per valore e per riferimento; `const&` per i parametri in sola lettura
+- Range-for: `auto` copia, `auto&` no
+- RVO
+- Metodi come funzioni pure: variabile locale invece di stato membro
 
-## Parking lot
-*(tangenti parcheggiate: una riga di contesto ciascuna — perché è emersa, dove potrà rientrare)*
+### Linguaggio
+- Template: specializzazione, corpo obbligatorio nell'header, template sul tipo di ritorno (`apply_range<T>`)
+- `std::visit` + `std::variant`, con `auto*` + `std::remove_pointer_t<decltype(ptr)>`
+- `= default` non inizializza i primitivi; inizializzatori sui membri
+- `Foo();` dichiara, `Foo() = default;` definisce
+- I membri si inizializzano nell'ordine di dichiarazione
+- Costruttori `explicit`
+- Inizializzazione alla dichiarazione e assegnazione
+- Overload resolution e le sue trappole (`replace`, `find`, `find_first_of`)
+- `sizeof(std::string)` e `size()`; `std::string` non usa `\0` come terminatore
+- `npos` = `(size_t)-1`: partecipa all'aritmetica
+- `[[nodiscard]]`; l'operatore virgola come bug
+- `static_cast` per il narrowing esplicito; `enum class`
+- `UNREFERENCED_PARAMETER`
+- Early return al posto di `else`; graffe per limitare la vita di un `lock_guard`
+- `std::format` (specifier, cast per gli enum); `std::chrono` C++20 (`zoned_time`, `current_zone`)
+- STL: `map::find`, `sort` con comparatore, `sort` + `unique`, `std::tie`; `strtok` contro `find`/`substr`
+- Dispatch table con `std::function`
 
-- `operator new` non ritorna `nullptr` su fallimento (lancia `std::bad_alloc`) — aggancia il difetto `C6011` su `new IndirectDeviceContext(Device)` nel driver e una misconception negli appunti di Valentina; chiudere al ritorno sul driver
-- `~IndirectDeviceContext`: `lock_guard`, `mutex`, `swap` di una mappa, `unique_ptr` — visti di sfuggita leggendo il distruttore, tutti da aprire quando il percorso li incontra
-- Lambda: teoria (cattura e closure) non consolidata — usata concretamente in `std::visit` e `GetSetting` (cattura di variabili, `this`). Richiesta esplicita di ripasso da Valentina
-- `IDD_IS_FIELD_AVAILABLE` — versioning runtime del framework; ramo `if` (HDR / callback `…2`) è quello vivo sulla VM (Win11 + WDK recente), ramo `else` è codice morto per lei
-- Doppia `RegCloseKey` in `EnabledQuery` (VDD) — `EnabledQuery` ora rimossa, il difetto non esiste più nel refactoring
-- fat pointer (puntatori a funzione membro > 8 byte) — solo se emerge nel codice
-- Guida alla creazione dei certificati di test — richiesta esplicita di Valentina, rimandata
-- **Separazione architetturale driver/settings**: il driver dovrebbe ricevere la configurazione, non leggerla — in corso di realizzazione con il refactoring
-- **Teoria su puntatori, reference, const, double pointer**: Valentina li usa ma la comprensione teorica è frammentaria. Da affrontare con teoria + esercizio mirato. Legato al filo conduttore ownership/lifetime
-- **std::visit + std::variant — ripasso teoria**: meccanismo, perché funziona, alternative, limiti. Richiesta esplicita di Valentina
-- **Static vs shared linking**: mismatch LNK2038 su `tinyxml2.lib` (debug/release, CRT statica/dinamica). Valentina ha dichiarato di non aver capito la differenza. Da affrontare come teoria
-- **Visibilità tra unità di traduzione (extern, scope globale)**: confusione tra `extern`, `friend`, variabile globale. Da collegare a compilazione separata e dichiarazione vs definizione
-- **Separazione granulare Get/Set in SettingsLoader**: l'accoppiamento XML+struct è coerenza, non difetto — ma rivalutare se emergono cicli di vita diversi per i due aspetti
-- **Dispatch table con `std::function`**: evoluzione della mappa comandi in HandleClient — idea del collega, dichiarata come `prova`, da sviluppare
-- **Incoerenza refresh rate tra percorsi**: `loadSettings` produce num/den in Hz, `LoadEdidProfile` produceva multiplier/nominal — stessa struttura dati, semantica diversa. Da risolvere col design MonitorProfile
-- **Migrazione campi fisici da DriverSettings a MonitorProfile**: color primaries, luminanza, gamma, color space — sono proprietà del pannello, non decisioni del driver. Da spostare e aggiornare i punti di lettura uno alla volta
-- **Separazione gamma correction da matrice colore**: i metodi `Get_*` di MonitorProfile mescolano trasformazione color space e gamma correction nella stessa matrice (come faceva il vecchio codice). Concettualmente sono due operazioni distinte. Da separare quando i metodi avranno un consumatore reale
-- **Due loader separati**: `DriverEntry` → `g_settings_manager.LoadSettings()` (settings strutturati) e `VirtualDisplayDriverDeviceAdd` → `loadSettings()` (modi monitor, GPU, monitor count). Due percorsi di caricamento distinti per dati che vivono in posti diversi
-- **AdapterOption — refactoring**: classe che modella la *selezione* di una GPU (nome + LUID + flag), non l'adapter hardware. Mescola la decisione (da dove viene il nome: XML vs file) con la ricerca (enumerare GPU, risolvere LUID via PCI bus). La decisione appartiene al driver, la classe. `load` e `xmlprovide` condividono la stessa logica di fallback. Obiettivo: portare dentro il driver, separare i due aspetti
-- **`s_KnownMonitorModes2` — dove mettere la conversione**: oggi è globale, ricostruita da `RebuildKnownMonitorModesCache` (che ora legge dal profilo). Pattern analogo a `Get_sRGB()` & co., ma `DISPLAYCONFIG_VIDEO_SIGNAL_INFO` è un tipo Windows/IddCx. Metterlo in MonitorProfile inquinerebbe il profilo con dipendenze IddCx. Da decidere dove vive la conversione
-- **MonitorProfile custom — loader**: il `g_custom_profile` è dichiarato ma vuoto. Serve un loader per popolarlo da file di configurazione (estendere XmlReader per struttura diversa dagli scalari, elementi ripetuti)
-- **Memoria, rappresentazione binaria, complemento a 2**: emersa dal wrap di `npos + 1` nella riscrittura di `tokenize`. Valentina non ha studiato queste basi all'università e vuole una lezione completa: come la memoria è organizzata e interpretata nel software, non solo il complemento a 2 in sé. Richiesta esplicita
-
-## Argomenti toccati — indice compatto
-
-### Linguaggio C++
-- Puntatori, reference, passaggio per valore/riferimento
-- Template: specializzazione, istanziazione, definizione in header, template su tipo di ritorno (`apply_range<T>`)
-- `std::variant`, `std::visit`, `std::remove_pointer_t`, `decltype`
-- `using` (type alias)
-- Overload resolution e le sue trappole
-- Costruttori `= default` e inizializzazione dei membri
-- Costruttori `explicit` e conversioni implicite
-- `sizeof` su classi vs `size()` su contenuti
-- `std::string` e gestione interna del null terminator
-- `std::string::npos` come `(size_t)-1` e overflow aritmetico unsigned
-- `std::chrono` C++20: `zoned_time`, `current_zone`, `std::format` con tipi chrono
-- `std::format` C++20: specifier, cast per enum, confronto con `stringstream`
-- Dangling pointer/handle
-- Ordine inizializzazione membri e initializer list
-- Lambda: cattura variabili e `this` (uso pratico, teoria da consolidare)
-- Early return come alternativa a `else`
-- Scope per limitare la vita di un `lock_guard`
-- `map::find` vs iterazione per lookup
-- `std::sort` con comparatore custom, `std::unique` per deduplicare adiacenti
-- `std::tie` per tuple unpacking
-- Dichiarazione vs definizione di costruttore; `= default` con default member initializers
-- `[[nodiscard]]` attribute
-- Operatore virgola in C++ e bug pattern
-- Frequenza di refresh come frazione (DISPLAYCONFIG_RATIONAL)
-- `static_cast` per narrowing esplicito (double→float)
-- `UNREFERENCED_PARAMETER` macro
-- RVO (Return Value Optimization)
-- Metodi come funzioni pure vs metodi con effetti collaterali
-- `enum class` al posto di confronti stringa (`ColorSpaceType`)
-- Range-for: `auto` (copia) vs `auto&` (riferimento) — bug silenzioso
-- `const std::string&` come parametro di sola lettura
-
-### Build system e toolchain
-- Compilazione vs linking (`.cpp` → `.obj` → `.exe`/`.dll`)
-- Name mangling, `dllexport`/`dllimport`, `.lib` di import
-- Toolset diversi tra progetti nella stessa solution
-- Clean + rebuild per risolvere simboli stale / PDB disallineati
-- Character set del progetto (Not Set / Multi-Byte / Unicode) e impatto sulle API TCHAR
-- Rinominazione progetto Visual Studio: allineare cartella, `.vcxproj`, `.vcxproj.filters`, `.sln`, `<RootNamespace>`
-- Warning WDK trattati come errori (`/WX`): disabilitare warning specifici per header di sistema (`4471`)
-- Mismatch CRT tra librerie: `_ITERATOR_DEBUG_LEVEL`, `RuntimeLibrary` — static vs shared, debug vs release
-- `.clang-format`: ColumnLimit portato a 150
+### Build e toolchain
+- Compilazione (`.cpp` → `.obj`, errori `C`) e linking (errori `LNK`)
+- Name mangling; le DLL esportano tipi C; `dllexport`/`dllimport` e `.lib` di import
+- Character set del progetto e macro TCHAR (versioni A/W)
+- "Multibyte" = codifica a più byte; `WideCharToMultiByte` + `CP_UTF8`
+- Warning WDK trattati come errori e disabilitati uno per uno; clean + rebuild per simboli stale; rinominare un progetto Visual Studio
 
 ### Windows API
-- Registry: `RegOpenKeyEx`, `RegQueryValueExW`, `RegGetValue`, `RegCloseKey`
-- Tipi registro: `REG_DWORD`, `REG_SZ`
-- Handle: tipi opachi, `HKEY`
-- Double-call pattern per lettura valori registro (size query → allocate → read)
-- `RegGetValue`: parametri `lpSubKey` vs `lpValueName`, flag `RRF_RT_*`
-- Named pipe: IPC tra processi, `ReadFile`/`WriteFile` su `HANDLE` — `ReadFile` come API generica per qualsiasi handle I/O
-- Versioni A/W delle API: `CreateDirectoryA` vs `CreateDirectoryW`, bypass della macro TCHAR
-- `WideCharToMultiByte` con `CP_UTF8`: conversione wide→narrow, termine "multibyte" in Windows
-- DXGI: `DXGI_ADAPTER_DESC::Description` è `WCHAR[128]`, non ha versione narrow
+- Handle opachi: `DECLARE_HANDLE`/`STRICT`, struct fantasma per il controllo dei tipi
+- Registro: `REG_DWORD`/`REG_SZ`, `RegGetValue` e `RegQueryValueEx`, `lpSubKey` e `lpValueName`, doppia chiamata (dimensione → allocazione → lettura)
+- Controllare sempre il ritorno di ciò che può fallire
+- Named pipe come IPC; `ReadFile` su qualsiasi handle di I/O
+- Frequenza di refresh come frazione (`DISPLAYCONFIG_RATIONAL`)
 
-### Design e architettura
-- Separazione responsabilità: reader/loader/utility/logger
-- Source of truth per i settings (XML primario, registro override)
-- Mapping path→campo con variant di puntatori
-- Struttura dati allineata al DOM XML
-- Gestione risorse: open/close nella stessa funzione vs split tra funzioni diverse (trade-off)
-- Uso vs possesso: il logger *usa* la pipe (`HANDLE*`) ma non la possiede — non crea, non chiude
-- File di log tenuto aperto con rotazione a cambio data (vs open/close a ogni messaggio)
-- Dipendenze esplicite via costruttore vs globali/Singleton: il costruttore rende visibile chi dipende da cosa
-- Separazione tipi IddCx dai settings generici: `globals.h` (tipi base) + `globals_iddcx.h` (tipi framework)
-- Valori derivati vs valori letti: `SDR_COLOR`/`HDR_COLOR` sono calcolati da settings, non settings loro stessi
-- Consolidamento funzioni duplicate: tre `UpdateXml...` → una unica `UpdateXmlSetting` (il tipo al punto di scrittura è sempre wstring)
-- HandleClient: mappa comando→struct per dispatch dei toggle, tokenizzazione del buffer, `SetSetting` per scrittura settings
-- `Resolution` struct: campi nominati (width, height, refresh_num, refresh_den) al posto di `tuple<int,int,int,int>`
-- `MonitorProfile`: separazione proprietà fisiche del monitor (color primaries, luminanza, gamma, color space, HDR capabilities, modi, preferred resolution) dalle decisioni del driver (DriverSettings)
-- Design a due profili (`default_profile` + `custom_profile`) + flag selettore: nessun merge condizionale, nessuna struttura intermedia, sovrascrittura totale del custom al cambio monitor
-- Distinzione EDID binario (blob 256 byte per il sistema operativo) vs EDID profilo (XML con capacità monitor)
-- Eliminazione livello intermedio colore/HDR: le struct intermedie (`VddGammaRamp`, `VddHdrMetadata`, `VddColorMatrix`, `EdidProfileData`) e gli store (`g_GammaRampStore`, `g_HdrMetadataStore`) non servono — `MonitorProfile` tiene i dati grezzi, la conversione ai formati IddCx avviene al momento dell'uso
-- `apply_range<T>`: utility generica clamp+moltiplica+cast, template sul tipo di ritorno per gestire vincoli di formato (UINT16 vs UINT32 in SMPTE ST.2086)
-- Migrazione dati con ponte temporaneo: produttore scrive nella nuova struttura + copia nella vecchia, consumatori migrati uno alla volta, ponte rimosso alla fine
-- Analisi "cosa modella una classe": AdapterOption modella una *selezione* (risultato), non un adapter (hardware)
+### Driver (WDF / IddCx)
+- Il driver è una libreria: niente `main`, scrivi callback e il sistema decide quando chiamarle; UMDF = DLL in `WUDFHost.exe`
+- WDF generico, IddCx specifico per i display indiretti; ciclo di vita in 6 stadi
+- Registrare una callback = riempire struct di puntatori a funzione
+- `DriverEntry` → `DeviceAdd` → `D0Entry` → `InitAdapter` (asincrono, completamento via callback)
+- Callback colore/HDR: i dati arrivano al driver; senza hardware sono no-op
+- Matrice colore 3×4 (trasformazione 3×3 + offset); conversioni SMPTE ST.2086
 
-### Driver Windows (IddCx/WDF)
-- Ciclo di vita a 6 stadi
-- Callback: registrazione e implementazione
-- `DeviceAdd`, `D0Entry`, `InitAdapter`
-- UMDF come DLL in `WUDFHost.exe`
-- Pipe driver↔companion app: `StartNamedPipeServer` → `NamedPipeServer` → `HandleClient`; ciclo di vita dell'handle gestito da `HandleClient`
-- Ordine inizializzazione driver: `DriverEntry` (settings) → `DeviceAdd` (`new IndirectDeviceContext`) → `D0Entry` (`InitAdapter`)
-- `IddCxGetVersion` + `IDARG_OUT_GETVERSION`: versioning runtime del framework
-- Phase 5 rimossa: 6 funzioni di validazione/monitoring che erano impalcatura vuota (dati che non venivano salvati, performance monitor su vettore vuoto, conteggi predeterminati)
-- Callback colore/HDR (`SetGammaRamp`, `SetDefaultHdrMetadata`): direzione *in* (il sistema invia dati al driver), non *out*. In un virtual display senza hardware fisico sono no-op
+### Librerie
+- TinyXML2: `GetText` e `RootElement` possono restituire `nullptr`; DOM e file sono cose separate (`SaveFile`)
 
-### Librerie esterne
-- TinyXML2: navigazione DOM, `FirstChildElement`, `GetText`, `RootElement` — null checks necessari. `SetText` per scrittura, `SaveFile` per persistenza su disco (DOM ≠ file)
-- Visitor pattern (discusso, scartato per il caso d'uso)
+### Design
+- Dipendenze esplicite nel costruttore invece di globali
+- Il driver riceve la configurazione, non la legge
+- Il codice morto si elimina
+- Dati grezzi nel profilo, conversione al momento dell'uso
+- Tipi del framework separati dai tipi generici (`globals.h` / `globals_iddcx.h`)
+- Valori derivati e valori letti
+- Migrazione produttore → consumatori con ponte temporaneo
+- "Cosa modella questa classe?" (`AdapterOption` = una selezione, non un adapter)
 
-## Materiale attivo
+## Concetti in corso
+- Passaggio di possesso con puntatore consumato e azzerato dalla funzione chiamata (`pDeviceInit` in `WdfDeviceCreate`)
+- Vita agganciata: `new` in `DeviceAdd`, `delete` in `Cleanup()` chiamata dal framework
+- Contesto WDF allocato dentro il blocco del device; `WdfObjectGet_…` calcola un offset, non alloca
+- Versioning a runtime (`IDD_IS_FIELD_AVAILABLE`)
+- X-macros: viste in teoria, scartate a favore di `std::visit`
 
-### Virtual Display Driver — analisi e refactoring
-- **Fork di studio**: `ghostintheshell-192/Virtual-Display-Driver-Ref` — fork di `itsmikethetech/Virtual-Display-Driver`. Detach dal parent richiesto a GitHub support (le PR defaultano sull'upstream). Pubblico.
-- **Convenzioni stabilite**: `STYLE_GUIDE.md` + `.clang-format` in root. Naming: `snake_case` variabili/funzioni nostre, `PascalCase` classi/struct e callback framework, `UPPER_CASE` costanti. Formattazione: Microsoft base, tab, 150-col.
-- **Progetto console `MttVddRefactor`**: banco di prova isolato per le classi refactorizzate. Naming file allineato: `.vcxproj` e `.vcxproj.filters` rinominati da `MttVddSettings` a `MttVddRefactor`, `<RootNamespace>` aggiornato.
-- **Branch `refactor/globals` (mergiato)**: ~50 globali migrate in `DriverSettings` con sotto-struct in `globals.h`. Istanza globale `g_settings`.
-- **Branch `refactor/settings-reading` (mergiato — PR #3)**: architettura settings completata:
-  - `SettingsLoader`: orchestratore. Riceve `DriverSettings*` dall'esterno, possiede il vettore `entries` (coppie chiave-puntatore), e i due reader
-  - `RegistryReader`: `RegGetValue` con flag `RRF_RT_*`, double-call pattern
-  - `XmlReader`: TinyXML2, navigazione DOM segmento per segmento
-  - `utilities.h`: `convert_setting<T>`, `tokenize`, `WStringToString`, `StringToWstring`, type alias `SettingValuePtr`, `apply_range<T>`, `vector_trim`
-  - `globals.h`: `DriverSettings` con sotto-struct (tipi base), `Resolution`, `ColorMatrix`, `MonitorProfile`, `ColorSpaceType` enum
-  - `globals_iddcx.h`: struct con campi di tipo IddCx (`IDDCX_BITS_PER_COMPONENT`, `IDDCX_XOR_CURSOR_SUPPORT`), incluso solo dal driver
-- **Branch `refactor/logging` (mergiato)**: classe `Logger` estratta da `vddlog()`:
-  - `enum class LogType` al posto del char per il tipo di log
-  - File tenuto aperto con rotazione a cambio data (check `HasDateChanged()` a ogni messaggio)
-  - `HANDLE*` alla pipe globale — uso senza possesso, dereferenziato a ogni chiamata
-  - `zoned_time` + `current_zone()` per timestamp locali (C++20)
-  - `ToggleStandardLogs`/`ToggleDebugLogs`/`TogglePipedLogs` con apertura/chiusura file coerente
-  - `SendToPipe` reso pubblico — passo intermedio, mescola responsabilità log/protocollo
-  - Debug logging in `GetSetting`: confronto vecchio/nuovo valore dentro la lambda `std::visit`
-- **Branch `refactor/driver-cleanup` (in corso — PR da fare)**: integrazione moduli e pulizia driver
-  - Moduli (settings, logging, utilities) importati in MttVDD, compilano con il driver
-  - `EnabledQuery`, `GetIntegerSetting`, `GetStringSetting`, `GetDoubleSetting`, `LogQueries` rimosse — sostituite da `g_settings_manager.Init()` + `LoadSettings()`
-  - `SettingsQueryMap` rimossa
-  - Phase 5 rimossa interamente: 6 funzioni + `g_IntegrationStatus` — nessuna dipendenza esterna
-  - `vddlog()` rimossa completamente (~318 chiamate → `g_log.Message()` con LogType)
-  - `std::format` introdotto in sostituzione di `stringstream` dove possibile
-  - `SendToPipe` standalone rimossa, metodo spostato a public nel Logger
-  - `UpdateXmlGpuSetting`, `UpdateXmlDisplayCountSetting` e `UpdateXmlSetting` consolidate e poi rimosse (sostituite da `XmlReader::SetSetting` con `SaveFile`)
-  - `HandleClient` refactored: tokenizzazione buffer, mappa comando→struct, `SetSetting` su SettingsLoader/XmlReader, trim virgolette via `vector_trim`
-  - `WStringToString` duplicata rimossa: una sola copia in `utilities.h`
-  - Driver passato a C++20; warning WDK 4471/4499/4505 disabilitati; `CreateDirectoryA`/`RegGetValueA` al posto delle macro
-  - `tinyxml2.lib`: usa versione shared/release per compatibilità con CRT del driver UMDF
-  - `.clang-format` ColumnLimit: 120 → 150
-  - `Resolution` struct introdotta in `globals.h`, sostituisce `vector<tuple<int,int,int,int>>` in tutto il driver
-  - `MonitorProfile` struct definita in `globals.h`: proprietà fisiche del monitor separate da DriverSettings. Metodi `Get_sRGB/DCI_P3/REC_2020/Adobe_RGB` come funzioni pure (restituiscono `ColorMatrix` locale). `ColorSpaceType` enum. `apply_range<T>` in utilities
-  - Chain mode management EDID rimosso: `GenerateModesFromEdid`, `FindPreferredModeFromEdid`, `MergeAndOptimizeModes`, `OptimizeModeList`, `ValidateModeList`, `ApplyEdidProfile`, `LoadEdidProfile` — 7 funzioni
-  - Strutture intermedie colore/HDR rimosse: `EdidProfileData`, `VddColorMatrix`, `VddGammaRamp`, `VddHdrMetadata`, `g_GammaRampStore`, `g_HdrMetadataStore`, tutte le funzioni `Convert*` (7), `SelectBitDepthFromColorSpace` (mai chiamata), blocco `APPLY EDID INTEGRATION` commentato
-  - Callback `SetGammaRamp` e `SetDefaultHdrMetadata` svuotate: `UNREFERENCED_PARAMETER` + commento + `return STATUS_SUCCESS`
-  - Bug fix: operatore virgola in condizione `GETSETTINGS` — `else if (expr, 11)` entrava sempre
-  - **MonitorProfile come consumer reale**: `loadSettings` scrive in `g_default_profile.modes`, `RebuildKnownMonitorModesCache` legge dal profilo, le 4 callback IddCx (ParseMonitorDescription, ParseMonitorDescription2, MonitorQueryModes, MonitorQueryTargetModes2) leggono da `g_default_profile.modes`. Globale `monitorModes` rimossa
-  - **XmlReader::SetSetting persiste su disco**: aggiunta gestione `file_path`, `SaveFile()` dopo `SetText`
-  - **`split()` rimossa**: duplicato di `tokenize`; `tokenize` riscritta per eliminare overflow `npos + 1`
-  - **Struct anonima `Options` rimossa**: wrappava solo `AdapterOption Adapter`, nessun motivo per il contenitore
+## Parking lot
+*(tangenti: si riprendono quando il percorso le incontra o quando Valentina le richiama)*
 
-### Ciclo di vita IddCx — lettura guidata
-- Mappa architetturale committata in `riferimenti/architettura-driver-windows.md`
-- `DriverEntry`: letta — carica settings, poi registra callback `DeviceAdd`
-- `DeviceAdd`: letta e chiusa
-- `D0Entry` + `InitAdapter`: esplorati
-- Stadi 4-5 (monitor, frame): non ancora toccati
+- `operator new` lancia `std::bad_alloc`, non restituisce `nullptr` — difetto `C6011` su `new IndirectDeviceContext` e un'idea sbagliata negli appunti
+- `~IndirectDeviceContext`: `lock_guard`, `mutex`, `swap` di una mappa, `unique_ptr` — visti di sfuggita
+- Fat pointer (puntatori a funzione membro) — solo se emergono nel codice
+- `SettingsLoader`: separare Get e Set solo se emergono cicli di vita diversi
+- Due caricamenti separati (`LoadSettings` in `DriverEntry`, `loadSettings` in `DeviceAdd`)
+- Rilascio ufficiale del fork e certificato di firma valido per i PC dei clienti — quando il refactoring sarà stabile
+
+## Materiale
+
+### VDD — fork di studio
+- Repo: `ghostintheshell-192/Virtual-Display-Driver-Ref`. Per ora da parte (al lavoro si usa l'upstream): occasione di studio. Obiettivo futuro: versione stabile e rilascio ufficiale del fork
+- Convenzioni: `STYLE_GUIDE.md` + `.clang-format` in root (snake_case per variabili e funzioni nostre, PascalCase per classi e callback, UPPER_CASE per costanti; base Microsoft, tab, 150 colonne)
+- Banco di prova: progetto console `MttVddRefactor`
+- Mergiati: `refactor/globals`, `refactor/settings-reading` (PR #3), `refactor/logging`
+- In corso: `refactor/driver-cleanup`, PR da aprire. Moduli settings/logging/utilities integrati nel driver; `vddlog()` sostituita dal `Logger`; codice morto rimosso (Phase 5, catena EDID, strutture intermedie colore/HDR); `MonitorProfile` è la fonte dei modi per le callback; driver in C++20. Il dettaglio è nella storia git del fork
+- Fili aperti del refactoring:
+  - `AdapterOption`: separare la selezione (da dove viene il nome) dalla ricerca (nome → LUID) e portarla nel driver
+  - `s_KnownMonitorModes2`: dove far vivere la conversione verso `DISPLAYCONFIG_VIDEO_SIGNAL_INFO` senza mettere tipi IddCx in `MonitorProfile`
+  - Loader per `g_custom_profile` (XML con elementi ripetuti)
+  - Spostare i campi fisici (primari, luminanza, gamma, color space) da `DriverSettings` a `MonitorProfile`
+  - Separare gamma e matrice colore nei metodi `Get_*`, quando avranno un consumatore
+  - Mappa comandi di `HandleClient` → dispatch table (idea del collega)
+
+### VDD — lettura guidata del ciclo di vita
+- Mappa in `riferimenti/architettura-driver-windows.md`
+- Letti: `DriverEntry`, `DeviceAdd`, `D0Entry` + `InitAdapter`. Non ancora: stadi 4-5 (monitor, frame)
 
 ### Calcolatrice
-- Progetto personale ground-up: da portare in questo repo dal desktop.
+- Progetto personale da zero, ancora sul PC di Valentina e non nel repo
 
 ## Menù possibile
-*(possibilità, non impegni — nessun ordine, nessuna priorità)*
+*(possibilità, non impegni)*
 
-- VDD refactoring: AdapterOption — portare dentro il driver, separare selezione da ricerca
-- VDD refactoring: `s_KnownMonitorModes2` — decidere dove mettere la conversione Resolution→DISPLAYCONFIG_VIDEO_SIGNAL_INFO senza inquinare MonitorProfile con tipi IddCx
-- VDD refactoring: MonitorProfile custom — loader per il profilo personalizzato da file
-- VDD refactoring: evolvere la mappa comandi in dispatch table (`std::function`)
-- VDD refactoring: migrare campi fisici da DriverSettings a MonitorProfile uno alla volta, aggiornando i consumatori
-- VDD refactoring: separare gamma correction dalla matrice colore nei metodi `Get_*` (quando avranno un consumatore)
-- VDD refactoring: X-macros — applicare se emerge un pattern ripetitivo nella forma finale
-- VDD: stadi 4-5 del ciclo di vita (monitor, frame)
-- VDD: chiudere i difetti parcheggiati (`new`/`C6011`)
-- Teoria + esercizio: puntatori, reference, const, double pointer — consolidamento fondamenta
-- Teoria + esercizio: lambda — cattura, closure, teoria
-- Teoria + esercizio: std::visit + std::variant — meccanismo e uso
-- Teoria + esercizio: static vs shared linking, CRT
-- Teoria + esercizio: visibilità tra unità di traduzione (extern, dichiarazione vs definizione)
-- Teoria + esercizio: inizializzazione membri in C++ — esercizi mirati
-- Teoria + esercizio: overload resolution — riconoscere quale overload si sta invocando
-- Teoria + esercizio: memoria, rappresentazione binaria, complemento a 2 — come la memoria è organizzata e interpretata
-- Puntatori: giro di ripasso a sorpresa (richiesto da Valentina)
-- Portare la calcolatrice nel repo e fare il punto sul suo stato
-- Guida alla creazione dei certificati di test
+- Una delle richieste esplicite di teoria
+- VDD: uno dei fili aperti del refactoring
+- VDD: stadi 4-5 del ciclo di vita
+- VDD: chiudere `C6011` / `operator new`
+- Esercizi mirati dal registro tutor (inizializzazione dei membri, overload, copia e riferimento, flusso di controllo)
+- Domanda di ripasso a sorpresa sui puntatori
+- Calcolatrice: portarla nel repo e fare il punto
+- Code review del codice scritto finora

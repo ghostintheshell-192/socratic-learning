@@ -1,109 +1,88 @@
 # Registro tutoriale
 
-Osservazioni su pattern, lacune, aree di esercizio. Aggiornato da Claude a fine sessione. Serve per decidere proattivamente quando proporre esercizi, ripasso, o domande mirate.
+Osservazioni su come impara Valentina, valide per tutti i percorsi. Aggiornato da Claude a fine sessione. Serve a decidere quando proporre esercizi, ripasso o domande mirate. Le regole generali su come insegnare (comprese quelle date da Valentina il 2026-08-28) stanno nelle istruzioni del progetto.
 
-## Aree deboli — per esercizio mirato
+## Trasversali
 
-### 1. Inizializzazione dei membri primitivi
-- **Cosa**: dimentica di inizializzare `bool`, `int`, `HKEY` etc. nella dichiarazione della classe
-- **Causa radice**: convinzione (corretta in sessione 2026-08-28) che `= default` inizializzi tutto. Ora sa che `= default` delega ai singoli membri e i primitivi restano indeterminati
-- **Frequenza**: 4 occorrenze in una sessione (2026-08-28)
-- **Esercizio suggerito**: quiz "cosa vale X dopo la costruzione?" su struct miste (primitivi + oggetti STL)
+### Ritmo e forma dei messaggi
+- **Cosa**: (2026-10-11, reverse engineering) Claude rispondeva più in fretta di quanto lei riuscisse a leggere ed eseguire; ha interrotto una risposta per incollare il codice che aveva davanti
+- **Contromisura**: un passo per messaggio, poi fermarsi e aspettare il riscontro (meglio se incolla il codice). Non anticipare il passo successivo
+- **Nota**: si è scusata per essere "lenta a leggere". Il ritmo è suo; non è un difetto
+- **Ultima osservazione**: 2026-10-11
+
+### Tracking delle correzioni
+- **Cosa**: quando riceve una lista di correzioni, applica le prime e perde le ultime
+- **Causa**: fretta + distraibilità. Non è un problema di comprensione
+- **Contromisura**: poche correzioni per messaggio; forma "in queste righe ci sono N errori: quali?"
 - **Ultima osservazione**: 2026-08-28
 
-### 2. Overload resolution / firma delle funzioni
-- **Cosa**: assume il comportamento di una funzione dal nome e dalla forma della chiamata senza verificare quale overload si invoca
-- **Casi concreti**: `std::string::replace` vs `std::replace` (da `<algorithm>`), `find(char)` vs `find(const char*)`, `find_first_of` (significato del terzo parametro)
-- **Causa radice**: impara facendo, non leggendo la documentazione. Quando una chiamata "sembra giusta" non verifica la firma
-- **Esercizio suggerito**: dato un frammento, "quale overload viene chiamato qui e cosa fa?"
+### Dedurre il comportamento dal nome
+- **Cosa**: deduce cosa fa una funzione dal nome o dalla forma della chiamata, senza verificare firma e documentazione
+- **Casi**: C++ — `std::string::replace` e `std::replace`, `find(char)` e `find(const char*)`, terzo parametro di `find_first_of` (2026-08-28). Reverse engineering — `CreateToolhelp32Snapshot` letto come "snapshot della VM" (2026-10-11)
+- **Causa**: impara facendo, non leggendo la documentazione
+- **Esercizio**: dato un frammento, "quale overload viene chiamato e cosa fa?"; per ogni API sconosciuta, leggere la prima frase e i parametri della pagina Microsoft prima di fare ipotesi
+- **Ultima osservazione**: 2026-10-11
+
+## C++ — aree deboli
+
+### Inizializzazione dei membri primitivi
+- **Cosa**: dimentica di inizializzare `bool`, `int`, `HKEY` nella dichiarazione della classe
+- **Causa**: credeva che `= default` inizializzasse tutto (corretto il 2026-08-28)
+- **Esercizio**: quiz "quanto vale X dopo la costruzione?" su struct miste (primitivi + oggetti STL)
+- **Ultima osservazione**: 2026-08-28 (4 occorrenze in una sessione)
+
+### Completezza del flusso di controllo
+- **Cosa**: fall-through dopo un ramo di successo (`return` mancante), messaggi di errore stampati anche quando va tutto bene
+- **Esercizio**: code review su funzioni con più rami — "cosa stampa se va tutto bene?"
 - **Ultima osservazione**: 2026-08-28
 
-### 3. Tracking delle correzioni
-- **Cosa**: quando riceve una lista di fix, i primi vengono applicati, gli ultimi evaporano
-- **Causa radice**: frettolosità + distraibilità (tratto SCT). Non è un problema di comprensione
-- **Contromisura concordata**: Claude dà meno correzioni per messaggio; usa la forma "in queste righe ci sono N errori, quali?" per forzare l'attenzione
-- **Ultima osservazione**: 2026-08-28
-
-### 4. Completezza del flusso di controllo
-- **Cosa**: fall-through dopo un ramo di successo (es. `return` mancante dopo if), messaggi di errore stampati anche in caso di successo
-- **Frequenza**: 2+ occorrenze (2026-08-28)
-- **Esercizio suggerito**: code review mirate su funzioni con rami multipli — "cosa stampa questa funzione se tutto va bene?"
-- **Ultima osservazione**: 2026-08-28
-
-### 5. Fidarsi di IntelliSense vs il compilatore
-- **Cosa**: assume che la mancanza di errori in IntelliSense significhi che il codice compila
-- **Caso concreto**: (2026-09-09) aggiunto membro `Logger*` a `XmlReader`, IntelliSense non segnava errori, ma il compilatore sì (`Logger` non dichiarato — mancava l'include)
-- **Causa radice**: IntelliSense ha un suo motore di parsing separato dal compilatore; può avere un'idea diversa di cosa è visibile
-- **Contromisura**: compilare sempre prima di concludere che qualcosa funziona
+### Fidarsi di IntelliSense invece del compilatore
+- **Caso**: (2026-09-09) membro `Logger*` aggiunto a `XmlReader` senza include: IntelliSense taceva, il compilatore no
+- **Contromisura**: compilare sempre prima di concludere che funziona
 - **Ultima osservazione**: 2026-09-09
 
-### 6. Copia vs riferimento nei loop e nelle funzioni
-- **Cosa**: dimentica `&` nel range-for (`for (auto tok : v)` invece di `for (auto& tok : v)`), scrive parametri per valore quando bastava `const&`
-- **Casi concreti**: (2026-09-16) `vector_trim` con `for (auto tok : tokens)` — modificava copie locali, il vettore originale restava invariato. `SetConfigurationFile(std::string path)` per valore dove bastava `const std::string&`
-- **Causa radice**: non ha interiorizzato il default del C++ (copia per valore) come qualcosa da contrastare attivamente ogni volta. Il codice compila, il bug è silenzioso
-- **Contromisura suggerita**: ogni volta che si scrive un range-for o un parametro funzione, chiedersi: "sto leggendo o modificando? Se modifico, serve `&`. Se leggo, serve `const&`?"
+### Copia e riferimento
+- **Cosa**: dimentica `&` nel range-for; parametri per valore dove bastava `const&`
+- **Casi**: (2026-09-16) `vector_trim` con `for (auto tok : tokens)`; `SetConfigurationFile(std::string path)`
+- **Causa**: non ha ancora interiorizzato che il default del C++ è la copia. Il codice compila, il bug è silenzioso
+- **Contromisura**: a ogni range-for o parametro, chiedersi "leggo o modifico?"
 - **Ultima osservazione**: 2026-09-16
 
-### 7. Semantica dei valori sentinella della standard library
-- **Cosa**: non conosceva il valore concreto di `std::string::npos` (`(size_t)-1`), quindi non poteva prevedere il comportamento aritmetico (`npos + 1` = overflow a 0)
-- **Caso concreto**: (2026-09-16) `tokenize` originale — `str.substr(npos + 1, str.size())` funzionava per caso grazie all'overflow. Scoperto durante la riscrittura
-- **Causa radice**: tratta i valori sentinella come "valori magici" senza chiedersi cosa sono concretamente. Connesso alla tendenza a non leggere la documentazione
-- **Contromisura suggerita**: quando un confronto con una costante della standard library appare nel codice (npos, end(), nullptr), chiedersi: "cos'è concretamente questo valore? come partecipa all'aritmetica se ci faccio operazioni?"
+### Valori sentinella della standard library
+- **Cosa**: tratta `npos`, `end()`, `nullptr` come valori magici senza chiedersi cosa sono concretamente
+- **Caso**: (2026-09-16) `tokenize` funzionava per caso grazie all'overflow di `npos + 1`
+- **Contromisura**: davanti a una costante della standard library, chiedersi "che valore è? come si comporta nell'aritmetica?"
 - **Ultima osservazione**: 2026-09-16
 
-### 8. Tendenza a complicare prima di semplificare
-- **Cosa**: quando un algoritmo non funziona, tende a cercare soluzioni alternative (ricorsione, pattern diversi) prima di pulire e fixare la versione che ha
-- **Caso concreto**: (2026-09-16) riscrittura di `tokenize` — dopo aver identificato il bug nell'overflow, ha provato una versione ricorsiva (con bug proprio: valore di ritorno perso), poi varie versioni iterative con ridondanze, prima di arrivare al flusso semplice
-- **Causa radice**: il pensiero associativo la porta a esplorare alternative. Positivo come pattern di apprendimento, ma nella pratica conviene prima far funzionare l'approccio più semplice
-- **Contromisura suggerita**: regola "fix first, refactor second" — prima far funzionare la versione che hai, poi pulirla. Il salto a un pattern diverso è giustificato solo se il corrente è strutturalmente inadatto
+### Complicare prima di semplificare
+- **Cosa**: quando un algoritmo non funziona, prova approcci diversi (ricorsione, altri pattern) prima di correggere la versione che ha
+- **Caso**: (2026-09-16) riscrittura di `tokenize`
+- **Causa**: il pensiero associativo la porta a esplorare; utile per imparare, meno per finire
+- **Contromisura**: "prima correggi, poi rifattorizza". Cambiare approccio solo se quello attuale è inadatto nella struttura
 - **Ultima osservazione**: 2026-09-16
 
-## Teoria da consolidare
-
-### Puntatori, reference, const
-- **Stato**: li usa correttamente nella pratica ma la spiegazione teorica è frammentaria
-- **Dettaglio**: "a malapena ti saprei spiegare cosa sono". Il doppio puntatore "l'ho capito e non l'ho capito — non riesco a immaginarmelo"
-- **Approccio**: teoria + esercizio mirato, collegato al filo conduttore ownership/lifetime
-- **Ultima osservazione**: 2026-08-28
-- **Aggiornamento 2026-09-09**: la "giungla di puntatori" creata passando `DriverSettings*` a SettingsLoader ha provocato disagio e tentativo di cercare scorciatoie (extern, globale). Il concetto è usato correttamente (puntatore a struct esterna → entries puntano ai campi), ma la complessità percepita rimane alta
-
-### Lambda functions
-- **Stato**: usate correttamente nella pratica (cattura, `this`, parametri), teoria non consolidata
-- **Dettaglio**: cattura e closure non affrontate in teoria. Le lambda sono usate concretamente in `std::visit` e in `GetSetting` (cattura di `raw_reg_value`, `value_key`, `this`)
-- **Approccio**: ripasso teoria quando riemerge il tema naturalmente
-- **Richiesta esplicita di Valentina**: 2026-09-09
-
-### std::visit + std::variant
-- **Stato**: pattern usato operativamente, da ripassare sia come meccanismo che come uso pratico
-- **Dettaglio**: sa che `std::visit` chiama il callable col tipo concreto, sa usare `auto*` + `remove_pointer_t` + `decltype`. Da consolidare: perché funziona, le alternative, i limiti
-- **Richiesta esplicita di Valentina**: 2026-09-09
-
-### Static vs shared linking
-- **Stato**: non compreso
-- **Caso concreto**: (2026-09-09) errore LNK2038 — mismatch `_ITERATOR_DEBUG_LEVEL` e `RuntimeLibrary` tra `tinyxml2.lib` (Debug, CRT dinamica) e driver (CRT statica release). Risolto usando la versione shared/release della lib, ma Valentina ha dichiarato di non aver capito la differenza static/shared
-- **Collegamento**: CRT statica vs dinamica, cosa succede al linking, perché il driver UMDF usa CRT statica in release anche in config Debug
-- **Richiesta esplicita di Valentina**: 2026-09-09
-
-### Visibilità tra unità di traduzione (extern, scope globale)
-- **Stato**: regola nota ma non interiorizzata ("non mi ricordo queste cose")
-- **Caso concreto**: (2026-09-09) voleva accedere a `g_settings` da `settings_loader.cpp` — ha proposto `extern`, poi `friend`, poi variabile globale, senza distinzione chiara tra i tre meccanismi. Dopo guida ha riconosciuto che passare per costruttore era la scelta coerente col design
-- **Collegamento**: compilazione separata, unità di traduzione, dichiarazione vs definizione
+### Puntatori e visibilità: teoria frammentaria
+- **Puntatori**: li usa correttamente, ma "a malapena ti saprei spiegare cosa sono"; il doppio puntatore "l'ho capito e non l'ho capito". (2026-09-09) La "giungla di puntatori" nel passare `DriverSettings*` a `SettingsLoader` le ha dato disagio e l'ha spinta a cercare scorciatoie (`extern`, globale)
+- **Visibilità**: (2026-09-09) per accedere a `g_settings` ha proposto `extern`, poi `friend`, poi una globale, senza distinguere i tre meccanismi. Con guida ha scelto il costruttore
 - **Ultima osservazione**: 2026-09-09
+
+## Reverse engineering — aree deboli
+
+### Sopraffazione davanti al decompilato rumoroso
+- **Cosa**: "è lunga, tutta variabili, e pochissimo codice" davanti a una funzione SIMD
+- **Contromisura**: regola insegnata — con molti `auVar`, saltare alle chiamate di API e leggere il resto nel Listing
+- **Ultima osservazione**: 2026-10-11
 
 ## Pattern positivi — da sfruttare
 
-- **Ragionamento architetturale forte**: le decisioni di design (separazione classi, precedenza registro, percorso unificato, variant di puntatori) arrivano spontaneamente prima dei suggerimenti
-- **Resilienza nel debugging concettuale**: non molla quando qualcosa non torna (es. `find_first_of` — ha resistito, fatto prove, chiesto chiarimenti ripetuti finché non ha fatto click)
-- **Sa eliminare**: riconosce quando la soluzione più semplice è togliere (dependency dllimport, wstring, UpdateXmlSetting, split duplicata, struct Options)
-- **Chiede feedback strutturato**: a fine sessione ha chiesto valutazione esplicita pregi/difetti e ha suggerito lei stessa come migliorare il processo tutoriale
-- **Autoconsapevolezza sui propri limiti**: "so usarli ma non ti saprei spiegare cosa sono" è una dichiarazione precisa e utile, non una lamentela
-- **Riconosce quando sta correndo troppo**: (2026-09-09) "non mi calmo e inizio a fare le cose senza pensare" — consapevolezza in tempo reale del pattern, anche se il pattern si ripete
-- **Analisi indipendente dei consumatori**: (2026-09-16) ha mappato autonomamente tutti i punti che leggono `monitorModes` e tutte le funzioni/consumatori di `AdapterOption` prima che Claude glielo chiedesse
-- **Accetta i vicoli ciechi senza frustrazione eccessiva**: (2026-09-16) nella riscrittura di `tokenize` ha provato la ricorsione, ha trovato il bug da sola, è tornata indietro all'iterativo senza drammi. L'autocritica ("sono un disastro con gli algoritmi") è stata momentanea, non paralizzante
-
-## Istruzioni operative (da Valentina, 2026-08-28)
-
-- Se un errore si ripete, non limitarti a segnalarlo: scava con domande per capire la convinzione errata sottostante
-- Il fatto che faccia giusto qualcosa non significa che la teoria sia solida — verificare periodicamente
-- Dare meno correzioni per messaggio, su più messaggi
-- Usare la forma "ci sono N errori, quali?" per forzare l'attenzione
+- **Ragionamento architetturale forte**: le decisioni di design (separazione delle classi, precedenza del registro, variant di puntatori) arrivano spontaneamente, prima dei suggerimenti
+- **Fa la domanda strutturale**: (2026-10-11) "perché proprio 0x50, 0x51, 0x52?" — la domanda che porta alle strutture
+- **Mappa da sola i consumatori**: (2026-09-16) tutti i punti che leggono `monitorModes`, tutti i consumatori di `AdapterOption`
+- **Riconosce i punti decisivi del flusso**: (2026-10-11) ha notato da sola che il confronto sugli offset era una condizione di `break`
+- **Sa eliminare**: riconosce quando la soluzione più semplice è togliere (`UpdateXmlSetting`, `split` duplicata, struct `Options`)
+- **Resilienza nel debugging concettuale**: non molla finché qualcosa non torna (es. `find_first_of`)
+- **Formula ipotesi**: (2026-10-11) "è un info-stealer" — non esatto, ma l'idea di fondo era giusta
+- **Porta a termine operazioni lunghe**: (2026-10-11) prima struttura nello Structure Editor senza errori, verificando ogni riga
+- **Accetta i vicoli ciechi**: (2026-09-16) nella riscrittura di `tokenize` è tornata indietro senza drammi; l'autocritica è stata momentanea
+- **Consapevole dei propri limiti**: "so usarli ma non ti saprei spiegare cosa sono" è una dichiarazione precisa, non una lamentela; riconosce in tempo reale quando sta correndo troppo
+- **Chiede feedback strutturato** e propone lei come migliorare il processo tutoriale
