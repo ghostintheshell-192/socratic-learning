@@ -5,13 +5,12 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 ## Richieste esplicite di teoria
 *(da offrire per prime nel menù)*
 
-- Esercizi di teoria pura, senza compilatore, su come appare la memoria e come cambia con i cast — le piace molto
+- Percorso "dove finisce ogni byte" — memoria su carta e toolchain; dettagli in Materiale
 - Puntatori, reference, `const`, doppi puntatori — li usa bene ma la teoria è frammentaria; il doppio puntatore "non riesce a immaginarlo"
 - Lambda — cattura e closure (le usa già in `std::visit` e `GetSetting`)
-- `std::visit` + `std::variant` — perché funziona, alternative, limiti
-- Linking statico e condiviso, CRT — dall'errore `LNK2038` su `tinyxml2.lib`
-- Visibilità tra unità di traduzione — `extern`, scope globale, dichiarazione e definizione
-- Memoria e rappresentazione binaria, complemento a 2 — come la memoria è organizzata e interpretata (nata da `npos + 1`)
+- `std::visit` + `std::variant` — perché funziona, alternative, limiti (non sono nel libro: si fanno sul codice del VDD)
+- Linking statico e condiviso, CRT — dall'errore `LNK2038` su `tinyxml2.lib`; si incontra nella parte 2 del percorso
+- Visibilità tra unità di traduzione — `extern`, scope globale, dichiarazione e definizione; si incontra nella parte 2 del percorso
 - Creazione dei certificati di test
 
 ## Concetti acquisiti
@@ -85,6 +84,16 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 - "Cosa modella questa classe?" (`AdapterOption` = una selezione, non un adapter)
 
 ## Concetti in corso
+- Array e puntatore sono cose diverse: l'array è il blocco, il puntatore è una variabile con un indirizzo; il nome dell'array si converte in puntatore al primo elemento
+- La dimensione di un array non è in memoria: la conosce solo il compilatore (`sizeof`); le stringhe C finiscono con `\0`
+- Letterali stringa in `.rdata` (sola lettura); `char a[] = "…"` copia sullo stack, `const char* p = "…"` punta all'originale
+- Tre zone di memoria: statica (`.rdata` + `.data`), stack, heap
+- Il compilatore traduce, non esegue: nell'eseguibile sta solo ciò che è scritto nel sorgente, non i risultati delle istruzioni
+- `static_cast` conserva il valore e cambia i bit; `reinterpret_cast` conserva i bit e cambia la lettura
+- `float`: 32 bit divisi in segno, posizione della virgola, cifre
+- Allineamento (un `double` a indirizzi multipli di 8)
+- `delete` = chiamata a una libreria che aggiorna il registro dei blocchi dello heap
+- `NULL` in C++ è lo zero intero, non `(void*)0`; `void*` legittimo per byte grezzi e al confine con C e sistema operativo
 - Passaggio di possesso con puntatore consumato e azzerato dalla funzione chiamata (`pDeviceInit` in `WdfDeviceCreate`)
 - Vita agganciata: `new` in `DeviceAdd`, `delete` in `Cleanup()` chiamata dal framework
 - Contesto WDF allocato dentro il blocco del device; `WdfObjectGet_…` calcola un offset, non alloca
@@ -94,7 +103,6 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 ## Parking lot
 *(tangenti: si riprendono quando il percorso le incontra o quando Valentina le richiama)*
 
-- Ripasso della toolchain: cosa fa il compilatore e cosa succede a runtime, sezioni dell'eseguibile (`.rdata`, `.data`)
 - `operator new` lancia `std::bad_alloc`, non restituisce `nullptr` — difetto `C6011` su `new IndirectDeviceContext` e un'idea sbagliata negli appunti
 - `~IndirectDeviceContext`: `lock_guard`, `mutex`, `swap` di una mappa, `unique_ptr` — visti di sfuggita
 - Fat pointer (puntatori a funzione membro) — solo se emergono nel codice
@@ -104,8 +112,18 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 
 ## Materiale
 
+### Percorso "dove finisce ogni byte"
+- Nato dall'idea di studiare prima il C: scartato il corso completo, scelto lo strato di C che sta dentro il C++
+- Filo unico: per ogni dato, dove sta nel file e dove finisce in memoria
+- Fatto di esercizi, non di letture: lei disegna o prevede, poi si verifica insieme. Ha già letto questi argomenti più volte; le manca l'immagine, non l'informazione
+- Parte 1 — memoria su carta, senza compilatore: poche righe di codice, lei descrive la memoria. Array, puntatori, stringhe C, struct, cast, rappresentazione degli interi (complemento a 2, nato da `npos + 1`)
+- Parte 2 — dal sorgente alla memoria: un solo programma minuscolo seguito attraverso compilazione, linking e caricamento. Si parte da ciò che ricorda e dai suoi appunti (ha già studiato la toolchain, con troppi dettagli)
+- Regola contro l'eccesso di approfondimento: un dettaglio entra solo se cambia il disegno; altrimenti va nel parking lot, e lo dichiara Claude
+- Le due parti si fanno nell'ordine che vuole lei. Non ancora iniziate
+
 ### Libro di teoria
-- Stroustrup, "C++. Linguaggio, libreria standard, principi di programmazione", 4ª edizione italiana (copre C++11). Valentina legge e porta le domande in sessione. In lettura: capitolo 7 (puntatori, array, riferimenti)
+- Stroustrup, "C++. Linguaggio, libreria standard, principi di programmazione", 4ª edizione italiana (copre C++11). Lo trova confusionario ma utile: lo sforzo produce domande, che porta in sessione. In lettura: capitolo 7 (puntatori, array, riferimenti)
+- La traduzione ha qualche errore (es. "8 bit" per "8 byte" sull'allineamento)
 
 ### VDD — fork di studio
 - Repo: `ghostintheshell-192/Virtual-Display-Driver-Ref`. Per ora da parte (al lavoro si usa l'upstream): occasione di studio. Obiettivo futuro: versione stabile e rilascio ufficiale del fork
@@ -131,11 +149,12 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 ## Menù possibile
 *(possibilità, non impegni)*
 
-- Una delle richieste esplicite di teoria
+- Percorso "dove finisce ogni byte": un esercizio di memoria su carta, oppure la parte sulla toolchain
+- Domande dalla lettura del capitolo 7
+- Una delle altre richieste esplicite di teoria
 - VDD: uno dei fili aperti del refactoring
 - VDD: stadi 4-5 del ciclo di vita
 - VDD: chiudere `C6011` / `operator new`
 - Esercizi mirati dal registro tutor (inizializzazione dei membri, overload, copia e riferimento, flusso di controllo)
-- Domanda di ripasso a sorpresa sui puntatori
 - Calcolatrice: portarla nel repo e fare il punto
 - Code review del codice scritto finora
