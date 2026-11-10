@@ -5,6 +5,7 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 ## Richieste esplicite di teoria
 *(da offrire per prime nel menù)*
 
+- Esercizi di teoria pura, senza compilatore, su come appare la memoria e come cambia con i cast — le piace molto
 - Puntatori, reference, `const`, doppi puntatori — li usa bene ma la teoria è frammentaria; il doppio puntatore "non riesce a immaginarlo"
 - Lambda — cattura e closure (le usa già in `std::visit` e `GetSetting`)
 - `std::visit` + `std::variant` — perché funziona, alternative, limiti
@@ -93,6 +94,7 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 ## Parking lot
 *(tangenti: si riprendono quando il percorso le incontra o quando Valentina le richiama)*
 
+- Ripasso della toolchain: cosa fa il compilatore e cosa succede a runtime, sezioni dell'eseguibile (`.rdata`, `.data`)
 - `operator new` lancia `std::bad_alloc`, non restituisce `nullptr` — difetto `C6011` su `new IndirectDeviceContext` e un'idea sbagliata negli appunti
 - `~IndirectDeviceContext`: `lock_guard`, `mutex`, `swap` di una mappa, `unique_ptr` — visti di sfuggita
 - Fat pointer (puntatori a funzione membro) — solo se emergono nel codice
@@ -101,6 +103,9 @@ Elenca, non spiega: una riga per voce. La rielaborazione vive nei quaderni di Va
 - Rilascio ufficiale del fork e certificato di firma valido per i PC dei clienti — quando il refactoring sarà stabile
 
 ## Materiale
+
+### Libro di teoria
+- Stroustrup, "C++. Linguaggio, libreria standard, principi di programmazione", 4ª edizione italiana (copre C++11). Valentina legge e porta le domande in sessione. In lettura: capitolo 7 (puntatori, array, riferimenti)
 
 ### VDD — fork di studio
 - Repo: `ghostintheshell-192/Virtual-Display-Driver-Ref`. Per ora da parte (al lavoro si usa l'upstream): occasione di studio. Obiettivo futuro: versione stabile e rilascio ufficiale del fork
